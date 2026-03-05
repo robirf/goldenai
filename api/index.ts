@@ -1,0 +1,425 @@
+import express from "express";
+import multer from "multer";
+import bcrypt from "bcryptjs";
+import path from "path";
+import { createClient } from "@supabase/supabase-js";
+
+const app = express();
+app.use(express.json());
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+const BCRYPT_ROUNDS = 10;
+const DEFAULT_BUCKET = "uploads";
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const storageBucket = process.env.SUPABASE_STORAGE_BUCKET || DEFAULT_BUCKET;
+
+if (!supabaseUrl || !supabaseServiceRoleKey) {
+  throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables");
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
+const isBcryptHash = (value: unknown): value is string => {
+  return typeof value === "string" && /^\$2[aby]\$\d{2}\$/.test(value);
+};
+
+const hashPassword = (password: string) => bcrypt.hashSync(password, BCRYPT_ROUNDS);
+
+const sanitizeProfessional = (professional: any) => {
+  const { password, ...professionalWithoutPassword } = professional;
+  return professionalWithoutPassword;
+};
+
+const mapDbError = (error: any, fallbackMessage: string) => {
+  if (error?.code === "23505") {
+    return { status: 409, message: "Já existe um registro com esse valor único" };
+  }
+  return { status: 500, message: error?.message || fallbackMessage };
+};
+
+app.post("/api/upload", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  const extension = path.extname(req.file.originalname || "").toLowerCase();
+  const filePath = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(storageBucket)
+    .upload(filePath, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    return res.status(500).json({ error: uploadError.message });
+  }
+
+  const { data } = supabase.storage.from(storageBucket).getPublicUrl(filePath);
+  res.json({ url: data.publicUrl });
+});
+
+app.post("/api/admin/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "E-mail e senha são obrigatórios" });
+  }
+
+  const { data: user, error } = await supabase
+    .from("professionals")
+    .select("*")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+  if (!user || !user.password) {
+    return res.status(401).json({ error: "Credenciais inválidas" });
+  }
+
+  if (isBcryptHash(user.password)) {
+    if (!bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: "Credenciais inválidas" });
+    }
+  } else if (user.password === password) {
+    const upgradedHash = hashPassword(password);
+    await supabase.from("professionals").update({ password: upgradedHash }).eq("id", user.id);
+  } else {
+    return res.status(401).json({ error: "Credenciais inválidas" });
+  }
+
+  res.json(sanitizeProfessional(user));
+});
+
+app.get("/api/services", async (_req, res) => {
+  const { data, error } = await supabase.from("services").select("*").order("id", { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+app.post("/api/services", async (req, res) => {
+  const { name, category, price, duration, image } = req.body;
+  const { data, error } = await supabase
+    .from("services")
+    .insert({ name, category, price, duration, image })
+    .select("id")
+    .single();
+
+  if (error) {
+    const mapped = mapDbError(error, "Erro ao cadastrar serviço");
+    return res.status(mapped.status).json({ error: mapped.message });
+  }
+
+  res.json({ id: data.id });
+});
+
+app.put("/api/services/:id", async (req, res) => {
+  const serviceId = Number(req.params.id);
+  if (!Number.isInteger(serviceId) || serviceId <= 0) {
+    return res.status(400).json({ error: "ID inválido" });
+  }
+
+  const { name, category, price, duration, image } = req.body;
+  const { error } = await supabase
+    .from("services")
+    .update({ name, category, price, duration, image })
+    .eq("id", serviceId);
+
+  if (error) {
+    const mapped = mapDbError(error, "Erro ao atualizar serviço");
+    return res.status(mapped.status).json({ error: mapped.message });
+  }
+
+  res.json({ success: true });
+});
+
+app.get("/api/professionals", async (_req, res) => {
+  const { data, error } = await supabase
+    .from("professionals")
+    .select("id, name, specialty, email, role, status, image, created_at")
+    .order("id", { ascending: true });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+app.post("/api/professionals", async (req, res) => {
+  const { name, specialty, email, password, role, image } = req.body;
+  if (!name || !specialty || !email || !password) {
+    return res.status(400).json({ error: "Nome, especialidade, e-mail e senha são obrigatórios" });
+  }
+  if (String(password).length < 8) {
+    return res.status(400).json({ error: "A senha deve ter no mínimo 8 caracteres" });
+  }
+
+  const { data, error } = await supabase
+    .from("professionals")
+    .insert({
+      name,
+      specialty,
+      email,
+      password: hashPassword(password),
+      role: role || "professional",
+      image: image || null,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "Já existe um profissional com esse e-mail" });
+    }
+    return res.status(500).json({ error: "Erro ao cadastrar profissional" });
+  }
+
+  res.json({ id: data.id });
+});
+
+app.put("/api/professionals/:id", async (req, res) => {
+  const professionalId = Number(req.params.id);
+  if (!Number.isInteger(professionalId) || professionalId <= 0) {
+    return res.status(400).json({ error: "ID inválido" });
+  }
+
+  const { name, specialty, email, image, password } = req.body;
+  if (!name || !specialty || !email) {
+    return res.status(400).json({ error: "Nome, especialidade e e-mail são obrigatórios" });
+  }
+  if (password && String(password).length < 8) {
+    return res.status(400).json({ error: "A senha deve ter no mínimo 8 caracteres" });
+  }
+
+  const payload: Record<string, unknown> = { name, specialty, email, image: image || null };
+  if (password && String(password).trim()) {
+    payload.password = hashPassword(password);
+  }
+
+  const { error } = await supabase.from("professionals").update(payload).eq("id", professionalId);
+  if (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "Já existe um profissional com esse e-mail" });
+    }
+    return res.status(500).json({ error: "Erro ao atualizar profissional" });
+  }
+
+  res.json({ success: true });
+});
+
+app.put("/api/admin/password", async (req, res) => {
+  const { adminId, newPassword } = req.body;
+  const parsedAdminId = Number(adminId);
+  if (!Number.isInteger(parsedAdminId) || parsedAdminId <= 0) {
+    return res.status(400).json({ error: "adminId inválido" });
+  }
+  if (!newPassword || String(newPassword).length < 8) {
+    return res.status(400).json({ error: "A nova senha deve ter no mínimo 8 caracteres" });
+  }
+
+  const { data: admin, error: adminError } = await supabase
+    .from("professionals")
+    .select("id")
+    .eq("id", parsedAdminId)
+    .eq("role", "admin")
+    .maybeSingle();
+
+  if (adminError) return res.status(500).json({ error: adminError.message });
+  if (!admin) {
+    return res.status(403).json({ error: "Apenas administradores podem alterar a senha por este endpoint" });
+  }
+
+  const { error } = await supabase
+    .from("professionals")
+    .update({ password: hashPassword(newPassword) })
+    .eq("id", parsedAdminId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+app.get("/api/bookings", async (req, res) => {
+  const whatsapp = typeof req.query.whatsapp === "string" ? req.query.whatsapp : undefined;
+  const professionalId = typeof req.query.professional_id === "string" ? Number(req.query.professional_id) : undefined;
+
+  let clientId: number | undefined;
+  if (whatsapp) {
+    const { data: client, error: clientError } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("whatsapp", whatsapp)
+      .maybeSingle();
+    if (clientError) return res.status(500).json({ error: clientError.message });
+    if (!client) return res.json([]);
+    clientId = client.id;
+  }
+
+  let query = supabase
+    .from("bookings")
+    .select(`
+      id, client_id, service_id, professional_id, date, time, status, created_at,
+      services(name),
+      professionals(name),
+      clients(name, whatsapp)
+    `)
+    .order("created_at", { ascending: false });
+
+  if (clientId) {
+    query = query.eq("client_id", clientId);
+  }
+  if (professionalId && Number.isInteger(professionalId)) {
+    query = query.eq("professional_id", professionalId);
+  }
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  const mapped = (data || []).map((booking: any) => ({
+    id: booking.id,
+    client_id: booking.client_id,
+    service_id: booking.service_id,
+    professional_id: booking.professional_id,
+    date: booking.date,
+    time: booking.time,
+    status: booking.status,
+    service_name: booking.services?.name,
+    professional_name: booking.professionals?.name,
+    client_name: booking.clients?.name,
+    whatsapp: booking.clients?.whatsapp,
+  }));
+
+  res.json(mapped);
+});
+
+app.post("/api/bookings", async (req, res) => {
+  const { client_name, whatsapp, service_id, professional_id, date, time } = req.body;
+  if (!client_name || !whatsapp || !service_id || !professional_id || !date || !time) {
+    return res.status(400).json({ error: "Dados obrigatórios ausentes" });
+  }
+
+  let clientId: number;
+  const { data: existingClient, error: clientLookupError } = await supabase
+    .from("clients")
+    .select("id")
+    .eq("whatsapp", whatsapp)
+    .maybeSingle();
+
+  if (clientLookupError) return res.status(500).json({ error: clientLookupError.message });
+
+  if (!existingClient) {
+    const { data: newClient, error: createClientError } = await supabase
+      .from("clients")
+      .insert({ name: client_name, whatsapp })
+      .select("id")
+      .single();
+    if (createClientError) return res.status(500).json({ error: createClientError.message });
+    clientId = newClient.id;
+  } else {
+    clientId = existingClient.id;
+    await supabase.from("clients").update({ name: client_name }).eq("id", clientId);
+  }
+
+  const { data: booking, error: bookingError } = await supabase
+    .from("bookings")
+    .insert({
+      client_id: clientId,
+      service_id,
+      professional_id,
+      date,
+      time,
+      status: "confirmed",
+    })
+    .select("id")
+    .single();
+
+  if (bookingError) return res.status(500).json({ error: bookingError.message });
+  res.json({ id: booking.id });
+});
+
+app.delete("/api/bookings/:id", async (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId) || bookingId <= 0) {
+    return res.status(400).json({ error: "ID inválido" });
+  }
+
+  const { error } = await supabase.from("bookings").delete().eq("id", bookingId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+app.get("/api/stats", async (_req, res) => {
+  const now = new Date();
+  const today = now.toISOString().split("T")[0];
+  const currentTime = now.toTimeString().substring(0, 5);
+
+  const { count: appointmentsToday, error: appointmentsError } = await supabase
+    .from("bookings")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", `${today}T00:00:00`)
+    .lte("created_at", `${today}T23:59:59`);
+  if (appointmentsError) return res.status(500).json({ error: appointmentsError.message });
+
+  const { count: newClients, error: clientsError } = await supabase
+    .from("clients")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", `${today}T00:00:00`)
+    .lte("created_at", `${today}T23:59:59`);
+  if (clientsError) return res.status(500).json({ error: clientsError.message });
+
+  const { data: confirmedBookings, error: confirmedError } = await supabase
+    .from("bookings")
+    .select("service_id, date, time")
+    .eq("status", "confirmed");
+  if (confirmedError) return res.status(500).json({ error: confirmedError.message });
+
+  const { data: services, error: servicesError } = await supabase.from("services").select("id, price");
+  if (servicesError) return res.status(500).json({ error: servicesError.message });
+
+  const servicePriceMap = new Map<number, number>((services || []).map((service: any) => [service.id, service.price]));
+
+  const revenue = (confirmedBookings || []).reduce((acc: number, booking: any) => {
+    const isPast = booking.date < today || (booking.date === today && booking.time <= currentTime);
+    if (!isPast) return acc;
+    return acc + (servicePriceMap.get(booking.service_id) || 0);
+  }, 0);
+
+  res.json({
+    appointmentsToday: appointmentsToday || 0,
+    newClients: newClients || 0,
+    revenue: Number(revenue.toFixed(2)),
+  });
+});
+
+app.put("/api/clients/:whatsapp", async (req, res) => {
+  const whatsapp = req.params.whatsapp;
+  const { name, email } = req.body;
+  if (!whatsapp || !name) {
+    return res.status(400).json({ error: "WhatsApp e nome são obrigatórios" });
+  }
+
+  const { error } = await supabase
+    .from("clients")
+    .update({ name, email: email || null })
+    .eq("whatsapp", whatsapp);
+
+  if (error) {
+    const mapped = mapDbError(error, "Erro ao atualizar cliente");
+    return res.status(mapped.status).json({ error: mapped.message });
+  }
+
+  res.json({ success: true });
+});
+
+app.use((_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
+export default app;

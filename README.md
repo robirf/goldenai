@@ -1,20 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Golden Clinic Beauty
 
-# Run and deploy your AI Studio app
+Aplicação React (Vite) com API serverless para Vercel usando Supabase.
 
-This contains everything you need to run your app locally.
+## Stack
 
-View your app in AI Studio: https://ai.studio/apps/f7869f2a-858c-41af-8ed0-8c9c07365135
+- Frontend: React + Vite
+- API: `api/index.ts` (Express em Serverless Function na Vercel)
+- Banco: Supabase Postgres
+- Uploads: Supabase Storage (`uploads`)
 
-## Run Locally
+## Configuração Supabase
 
-**Prerequisites:**  Node.js
+1. Execute o schema em `supabase/schema.sql` no projeto Supabase.
+2. Configure variáveis de ambiente (veja `.env.example`):
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `SUPABASE_STORAGE_BUCKET` (opcional, default `uploads`)
 
+Guia rápido: `supabase/SETUP.md`.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Desenvolvimento local
+
+1. `npm install`
+2. Configure `.env.local` com as variáveis do Supabase
+3. `npm run dev`
+
+## Deploy na Vercel
+
+1. Importar o repositório na Vercel.
+2. Definir env vars:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `SUPABASE_STORAGE_BUCKET`
+3. Deploy (build: `npm run build`, output: `dist`).

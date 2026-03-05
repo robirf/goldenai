@@ -18,6 +18,27 @@ export interface Professional {
   image: string;
 }
 
+export interface ProfessionalCreatePayload {
+  name: string;
+  specialty: string;
+  email: string;
+  password: string;
+  image?: string;
+}
+
+export interface ProfessionalUpdatePayload {
+  name: string;
+  specialty: string;
+  email: string;
+  image?: string;
+  password?: string;
+}
+
+export interface AdminPasswordUpdatePayload {
+  adminId: number;
+  newPassword: string;
+}
+
 export interface Client {
   id: number;
   name: string;

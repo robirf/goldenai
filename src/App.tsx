@@ -23,10 +23,11 @@ import {
   Trash2,
   Edit2,
   Check,
-  Upload
+  Upload,
+  KeyRound
 } from 'lucide-react';
 import { api } from './services/api';
-import { Service, Professional, Booking, Stats } from './types';
+import { Service, Professional, Booking, Stats, ProfessionalCreatePayload, ProfessionalUpdatePayload } from './types';
 
 // --- Components ---
 
@@ -898,8 +899,10 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
   const [tab, setTab] = useState<'dashboard' | 'professionals' | 'services'>('dashboard');
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
-  const [showModal, setShowModal] = useState<'service' | 'professional' | null>(null);
+  const [showModal, setShowModal] = useState<'service' | 'professional' | 'admin-password' | null>(null);
+  const [professionalModalMode, setProfessionalModalMode] = useState<'create' | 'edit'>('create');
   const [formData, setFormData] = useState<any>({});
+  const [adminPasswordData, setAdminPasswordData] = useState({ newPassword: '', confirmPassword: '' });
 
   const isAdmin = adminUser.role === 'admin';
 
@@ -939,20 +942,81 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
 
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.id) {
-      await api.updateService(formData.id, formData);
-    } else {
-      await api.createService(formData);
+    try {
+      if (formData.id) {
+        await api.updateService(formData.id, formData);
+      } else {
+        await api.createService(formData);
+      }
+      setShowModal(null);
+      loadData();
+    } catch (error: any) {
+      alert(error?.message || "Erro ao salvar serviço");
     }
-    setShowModal(null);
-    loadData();
+  };
+
+  const openCreateProfessionalModal = () => {
+    setProfessionalModalMode('create');
+    setFormData({});
+    setShowModal('professional');
+  };
+
+  const openEditProfessionalModal = (professional: Professional) => {
+    setProfessionalModalMode('edit');
+    setFormData({ ...professional, password: '' });
+    setShowModal('professional');
   };
 
   const handleSaveProfessional = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.createProfessional(formData);
-    setShowModal(null);
-    loadData();
+    try {
+      if (formData.id) {
+        const payload: ProfessionalUpdatePayload = {
+          name: formData.name,
+          specialty: formData.specialty,
+          email: formData.email,
+          image: formData.image,
+          ...(formData.password?.trim() ? { password: formData.password } : {}),
+        };
+        await api.updateProfessional(formData.id, payload);
+        alert("Profissional atualizado com sucesso");
+      } else {
+        const payload: ProfessionalCreatePayload = {
+          name: formData.name,
+          specialty: formData.specialty,
+          email: formData.email,
+          password: formData.password,
+          image: formData.image,
+        };
+        await api.createProfessional(payload);
+        alert("Profissional cadastrado com sucesso");
+      }
+      setShowModal(null);
+      loadData();
+    } catch (error: any) {
+      alert(error?.message || "Erro ao salvar profissional");
+    }
+  };
+
+  const handleSaveAdminPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPasswordData.newPassword.length < 8) {
+      alert("A nova senha deve ter no mínimo 8 caracteres");
+      return;
+    }
+    if (adminPasswordData.newPassword !== adminPasswordData.confirmPassword) {
+      alert("A confirmação de senha não confere");
+      return;
+    }
+
+    try {
+      await api.updateAdminPassword(adminUser.id, adminPasswordData.newPassword);
+      alert("Senha alterada com sucesso");
+      setAdminPasswordData({ newPassword: '', confirmPassword: '' });
+      setShowModal(null);
+    } catch (error: any) {
+      alert(error?.message || "Erro ao alterar senha");
+    }
   };
 
   return (
@@ -1023,6 +1087,16 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
               <p className="text-sm font-bold">{adminUser.name}</p>
               <p className="text-xs text-slate-400 uppercase tracking-widest">{adminUser.role}</p>
             </div>
+            {isAdmin && (
+              <button
+                onClick={() => setShowModal('admin-password')}
+                className="flex items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-wider text-primary border border-primary/20 rounded-lg hover:bg-primary/5 transition-all"
+                title="Alterar minha senha"
+              >
+                <KeyRound size={14} />
+                <span className="hidden sm:inline">Alterar senha</span>
+              </button>
+            )}
             <div className="w-10 h-10 rounded-full bg-primary/20 border border-primary/30 overflow-hidden">
               <img src={adminUser.image} className="w-full h-full object-cover" />
             </div>
@@ -1133,7 +1207,7 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold">Gerenciar Profissionais</h3>
-              <Button onClick={() => { setFormData({}); setShowModal('professional'); }}>
+              <Button onClick={openCreateProfessionalModal}>
                 <Plus size={20} /> Novo Profissional
               </Button>
             </div>
@@ -1146,6 +1220,13 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                     <p className="text-xs text-slate-400">{p.specialty}</p>
                     <p className="text-[10px] text-primary uppercase font-bold mt-1">{p.role}</p>
                   </div>
+                  <button 
+                    onClick={() => openEditProfessionalModal(p)}
+                    className="p-2 text-slate-400 hover:text-primary transition-all"
+                    title="Editar profissional"
+                  >
+                    <Edit2 size={18} />
+                  </button>
                 </Card>
               ))}
             </div>
@@ -1263,7 +1344,7 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
       {showModal === 'professional' && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
           <Card className="w-full max-w-md p-6 space-y-6">
-            <h3 className="text-2xl font-bold">Novo Profissional</h3>
+            <h3 className="text-2xl font-bold">{professionalModalMode === 'edit' ? 'Editar Profissional' : 'Novo Profissional'}</h3>
             <form onSubmit={handleSaveProfessional} className="space-y-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Nome</label>
@@ -1296,9 +1377,10 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Senha</label>
                 <input 
-                  required
+                  required={professionalModalMode === 'create'}
                   type="password"
                   className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary"
+                  placeholder={professionalModalMode === 'edit' ? 'Deixe vazio para manter' : 'Mínimo de 8 caracteres'}
                   value={formData.password || ''}
                   onChange={e => setFormData({ ...formData, password: e.target.value })}
                 />
@@ -1327,7 +1409,55 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
               </div>
               <div className="flex gap-4 pt-4">
                 <Button variant="outline" className="flex-1" type="button" onClick={() => setShowModal(null)}>Cancelar</Button>
-                <Button className="flex-1" type="submit">Cadastrar</Button>
+                <Button className="flex-1" type="submit">{professionalModalMode === 'edit' ? 'Salvar' : 'Cadastrar'}</Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {showModal === 'admin-password' && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+          <Card className="w-full max-w-md p-6 space-y-6">
+            <h3 className="text-2xl font-bold">Alterar Minha Senha</h3>
+            <form onSubmit={handleSaveAdminPassword} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Nova senha</label>
+                <input
+                  required
+                  type="password"
+                  minLength={8}
+                  className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Mínimo de 8 caracteres"
+                  value={adminPasswordData.newPassword}
+                  onChange={e => setAdminPasswordData({ ...adminPasswordData, newPassword: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Confirmar nova senha</label>
+                <input
+                  required
+                  type="password"
+                  minLength={8}
+                  className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Repita a nova senha"
+                  value={adminPasswordData.confirmPassword}
+                  onChange={e => setAdminPasswordData({ ...adminPasswordData, confirmPassword: e.target.value })}
+                />
+              </div>
+              <div className="flex gap-4 pt-4">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  type="button"
+                  onClick={() => {
+                    setAdminPasswordData({ newPassword: '', confirmPassword: '' });
+                    setShowModal(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button className="flex-1" type="submit">Salvar Senha</Button>
               </div>
             </form>
           </Card>
