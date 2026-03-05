@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Playfair Display", serif;
+  --font-sans: "Poppins", sans-serif;
+  --font-manrope: "Manrope", sans-serif;
+
+  --color-primary: #d4af35;
+  --color-background-light: #f8f7f6;
+  --color-background-dark: #201d12;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-background-light text-slate-900 antialiased;
+  }
+  h1, h2, h3 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary text-background-dark font-bold py-3 px-6 rounded-full shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center justify-center gap-2;
+  }
+  .card {
+    @apply bg-white rounded-2xl border border-primary/10 shadow-sm overflow-hidden;
+  }
+}
