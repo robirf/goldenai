@@ -7,9 +7,10 @@ import { createClient } from "@supabase/supabase-js";
 const app = express();
 app.use(express.json());
 
+const MAX_UPLOAD_SIZE_BYTES = 4 * 1024 * 1024;
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
 });
 
 const BCRYPT_ROUNDS = 10;
@@ -26,6 +27,7 @@ if (!supabaseUrl || !supabaseServiceRoleKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+let storageBucketReady = false;
 
 const isBcryptHash = (value: unknown): value is string => {
   return typeof value === "string" && /^\$2[aby]\$\d{2}\$/.test(value);
@@ -45,18 +47,46 @@ const mapDbError = (error: any, fallbackMessage: string) => {
   return { status: 500, message: error?.message || fallbackMessage };
 };
 
+const ensureStorageBucket = async () => {
+  if (storageBucketReady) return;
+
+  const { data, error } = await supabase.storage.getBucket(storageBucket);
+  if (!error && data) {
+    storageBucketReady = true;
+    return;
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(storageBucket, { public: true });
+  if (createError && !/already exists/i.test(createError.message || "")) {
+    throw createError;
+  }
+
+  storageBucketReady = true;
+};
+
 app.post("/api/upload", upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
 
-  const extension = path.extname(req.file.originalname || "").toLowerCase();
-  const filePath = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+  if (!req.file.mimetype?.startsWith("image/")) {
+    return res.status(415).json({ error: "Apenas arquivos de imagem são permitidos" });
+  }
+
+  try {
+    await ensureStorageBucket();
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message || "Falha ao preparar bucket de upload" });
+  }
+
+  const extensionFromMime = req.file.mimetype.replace("image/", "").replace("jpeg", "jpg");
+  const extension = path.extname(req.file.originalname || "").toLowerCase() || `.${extensionFromMime}`;
+  const filePath = `images/${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
 
   const { error: uploadError } = await supabase.storage
     .from(storageBucket)
     .upload(filePath, req.file.buffer, {
-      contentType: req.file.mimetype,
+      contentType: req.file.mimetype || "application/octet-stream",
       upsert: false,
     });
 
@@ -420,6 +450,16 @@ app.put("/api/clients/:whatsapp", async (req, res) => {
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
+});
+
+app.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({ error: "Imagem muito grande. Envie um arquivo de até 4MB." });
+  }
+  if (error) {
+    return res.status(500).json({ error: error.message || "Erro interno no upload" });
+  }
+  return res.status(500).json({ error: "Erro interno no upload" });
 });
 
 export default app;

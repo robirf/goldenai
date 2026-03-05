@@ -909,12 +909,26 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert("Selecione apenas arquivos de imagem.");
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > 4 * 1024 * 1024) {
+      alert("Imagem muito grande. Envie um arquivo de até 4MB.");
+      e.target.value = '';
+      return;
+    }
     
     try {
       const { url } = await api.uploadFile(file);
-      setFormData({ ...formData, [field]: url });
-    } catch (err) {
-      alert("Erro ao fazer upload da imagem");
+      setFormData((prev: any) => ({ ...prev, [field]: url }));
+    } catch (err: any) {
+      alert(err?.message || "Erro ao fazer upload da imagem");
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -1485,8 +1499,16 @@ export default function App() {
     setView('booking');
   };
 
+  const isAdminArea = view === 'admin' || view === 'admin-login';
+
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-background-light shadow-2xl relative">
+    <div
+      className={
+        isAdminArea
+          ? "w-full min-h-screen bg-background-light relative"
+          : "max-w-md mx-auto min-h-screen bg-background-light shadow-2xl relative"
+      }
+    >
       <AnimatePresence mode="wait">
         {view === 'home' && (
           <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
