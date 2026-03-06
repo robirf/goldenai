@@ -98,7 +98,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
   res.json({ url: data.publicUrl });
 });
 
-app.post("/api/admin/login", async (req, res) => {
+const handleAdminLogin = async (req: express.Request, res: express.Response) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "E-mail e senha são obrigatórios" });
@@ -129,7 +129,10 @@ app.post("/api/admin/login", async (req, res) => {
   }
 
   res.json(sanitizeProfessional(user));
-});
+};
+
+app.post("/api/admin/login", handleAdminLogin);
+app.post("/api/admin-login", handleAdminLogin);
 
 app.get("/api/services", async (_req, res) => {
   const { data, error } = await supabase.from("services").select("*").order("id", { ascending: true });

@@ -63,7 +63,7 @@ export const api = {
     return parseResponse<Stats>(res);
   },
   adminLogin: async (data: any): Promise<Professional> => {
-    const res = await fetch(`${API_BASE}/admin/login`, {
+    const res = await fetch(`${API_BASE}/admin-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
