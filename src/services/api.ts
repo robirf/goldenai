@@ -45,16 +45,18 @@ export const api = {
     return parseResponse<{ id: number }>(res);
   },
   deleteBooking: async (id: number): Promise<{ success: boolean }> => {
-    const res = await fetch(`${API_BASE}/bookings/${id}`, {
-      method: "DELETE",
+    const res = await fetch(`${API_BASE}/bookings-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
     });
     return parseResponse<{ success: boolean }>(res);
   },
   updateClient: async (whatsapp: string, data: { name: string; email?: string }): Promise<{ success: boolean }> => {
-    const res = await fetch(`${API_BASE}/clients/${whatsapp}`, {
-      method: "PUT",
+    const res = await fetch(`${API_BASE}/clients-update`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ whatsapp, ...data }),
     });
     return parseResponse<{ success: boolean }>(res);
   },
@@ -79,10 +81,10 @@ export const api = {
     return parseResponse<{ id: number }>(res);
   },
   updateService: async (id: number, data: any): Promise<void> => {
-    const res = await fetch(`${API_BASE}/services/${id}`, {
-      method: "PUT",
+    const res = await fetch(`${API_BASE}/services-update`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ id, ...data }),
     });
     await parseResponse<{ success: boolean }>(res);
   },
@@ -95,17 +97,17 @@ export const api = {
     return parseResponse<{ id: number }>(res);
   },
   updateProfessional: async (id: number, data: ProfessionalUpdatePayload): Promise<{ success: boolean }> => {
-    const res = await fetch(`${API_BASE}/professionals/${id}`, {
-      method: "PUT",
+    const res = await fetch(`${API_BASE}/professionals-update`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ id, ...data }),
     });
     return parseResponse<{ success: boolean }>(res);
   },
   updateAdminPassword: async (adminId: number, newPassword: string): Promise<{ success: boolean }> => {
     const payload: AdminPasswordUpdatePayload = { adminId, newPassword };
-    const res = await fetch(`${API_BASE}/admin/password`, {
-      method: "PUT",
+    const res = await fetch(`${API_BASE}/admin-password-update`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });

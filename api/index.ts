@@ -156,8 +156,8 @@ app.post("/api/services", async (req, res) => {
   res.json({ id: data.id });
 });
 
-app.put("/api/services/:id", async (req, res) => {
-  const serviceId = Number(req.params.id);
+const handleUpdateService = async (serviceIdRaw: unknown, req: express.Request, res: express.Response) => {
+  const serviceId = Number(serviceIdRaw);
   if (!Number.isInteger(serviceId) || serviceId <= 0) {
     return res.status(400).json({ error: "ID inválido" });
   }
@@ -174,7 +174,10 @@ app.put("/api/services/:id", async (req, res) => {
   }
 
   res.json({ success: true });
-});
+};
+
+app.put("/api/services/:id", async (req, res) => handleUpdateService(req.params.id, req, res));
+app.post("/api/services-update", async (req, res) => handleUpdateService(req.body?.id, req, res));
 
 app.get("/api/professionals", async (_req, res) => {
   const { data, error } = await supabase
@@ -218,8 +221,8 @@ app.post("/api/professionals", async (req, res) => {
   res.json({ id: data.id });
 });
 
-app.put("/api/professionals/:id", async (req, res) => {
-  const professionalId = Number(req.params.id);
+const handleUpdateProfessional = async (professionalIdRaw: unknown, req: express.Request, res: express.Response) => {
+  const professionalId = Number(professionalIdRaw);
   if (!Number.isInteger(professionalId) || professionalId <= 0) {
     return res.status(400).json({ error: "ID inválido" });
   }
@@ -246,9 +249,12 @@ app.put("/api/professionals/:id", async (req, res) => {
   }
 
   res.json({ success: true });
-});
+};
 
-app.put("/api/admin/password", async (req, res) => {
+app.put("/api/professionals/:id", async (req, res) => handleUpdateProfessional(req.params.id, req, res));
+app.post("/api/professionals-update", async (req, res) => handleUpdateProfessional(req.body?.id, req, res));
+
+const handleUpdateAdminPassword = async (req: express.Request, res: express.Response) => {
   const { adminId, newPassword } = req.body;
   const parsedAdminId = Number(adminId);
   if (!Number.isInteger(parsedAdminId) || parsedAdminId <= 0) {
@@ -277,7 +283,10 @@ app.put("/api/admin/password", async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
-});
+};
+
+app.put("/api/admin/password", handleUpdateAdminPassword);
+app.post("/api/admin-password-update", handleUpdateAdminPassword);
 
 app.get("/api/bookings", async (req, res) => {
   const whatsapp = typeof req.query.whatsapp === "string" ? req.query.whatsapp : undefined;
@@ -377,8 +386,8 @@ app.post("/api/bookings", async (req, res) => {
   res.json({ id: booking.id });
 });
 
-app.delete("/api/bookings/:id", async (req, res) => {
-  const bookingId = Number(req.params.id);
+const handleDeleteBooking = async (bookingIdRaw: unknown, res: express.Response) => {
+  const bookingId = Number(bookingIdRaw);
   if (!Number.isInteger(bookingId) || bookingId <= 0) {
     return res.status(400).json({ error: "ID inválido" });
   }
@@ -386,7 +395,10 @@ app.delete("/api/bookings/:id", async (req, res) => {
   const { error } = await supabase.from("bookings").delete().eq("id", bookingId);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
-});
+};
+
+app.delete("/api/bookings/:id", async (req, res) => handleDeleteBooking(req.params.id, res));
+app.post("/api/bookings-delete", async (req, res) => handleDeleteBooking(req.body?.id, res));
 
 app.get("/api/stats", async (_req, res) => {
   const now = new Date();
@@ -431,8 +443,8 @@ app.get("/api/stats", async (_req, res) => {
   });
 });
 
-app.put("/api/clients/:whatsapp", async (req, res) => {
-  const whatsapp = req.params.whatsapp;
+const handleUpdateClient = async (whatsappRaw: unknown, req: express.Request, res: express.Response) => {
+  const whatsapp = String(whatsappRaw || "");
   const { name, email } = req.body;
   if (!whatsapp || !name) {
     return res.status(400).json({ error: "WhatsApp e nome são obrigatórios" });
@@ -449,7 +461,10 @@ app.put("/api/clients/:whatsapp", async (req, res) => {
   }
 
   res.json({ success: true });
-});
+};
+
+app.put("/api/clients/:whatsapp", async (req, res) => handleUpdateClient(req.params.whatsapp, req, res));
+app.post("/api/clients-update", async (req, res) => handleUpdateClient(req.body?.whatsapp, req, res));
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
