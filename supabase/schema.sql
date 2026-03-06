@@ -10,6 +10,8 @@ create table if not exists public.services (
   duration integer not null check (duration > 0),
   status text not null default 'active' check (status in ('active', 'inactive')),
   image text,
+  description text,
+  professional_id bigint,
   created_at timestamptz not null default now()
 );
 
@@ -44,6 +46,23 @@ create table if not exists public.bookings (
   status text not null default 'confirmed' check (status in ('confirmed', 'pending', 'cancelled')),
   created_at timestamptz not null default now()
 );
+
+alter table public.services add column if not exists description text;
+alter table public.services add column if not exists professional_id bigint;
+do $$
+begin
+  if not exists (
+    select 1
+    from information_schema.table_constraints
+    where constraint_name = 'services_professional_id_fkey'
+      and table_schema = 'public'
+      and table_name = 'services'
+  ) then
+    alter table public.services
+      add constraint services_professional_id_fkey
+      foreign key (professional_id) references public.professionals(id) on delete set null;
+  end if;
+end $$;
 
 create index if not exists idx_bookings_professional_id on public.bookings(professional_id);
 create index if not exists idx_bookings_client_id on public.bookings(client_id);

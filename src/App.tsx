@@ -452,7 +452,15 @@ const AdminLogin = ({ onLogin, onCancel }: { onLogin: (user: Professional) => vo
   );
 };
 
-const HomeView = ({ onStartBooking, onViewAll }: { onStartBooking: () => void, onViewAll: () => void }) => {
+const HomeView = ({
+  onStartBooking,
+  onViewAll,
+  onOpenServiceDetails,
+}: {
+  onStartBooking: () => void,
+  onViewAll: () => void,
+  onOpenServiceDetails: (service: Service) => void,
+}) => {
   const [services, setServices] = useState<Service[]>([]);
 
   useEffect(() => {
@@ -518,8 +526,8 @@ const HomeView = ({ onStartBooking, onViewAll }: { onStartBooking: () => void, o
               </div>
               <div className="p-4 space-y-4">
                 <h3 className="text-lg font-bold">{service.name}</h3>
-                <p className="text-slate-500 text-sm">Tratamentos exclusivos para realçar sua beleza natural.</p>
-                <Button variant="outline" className="w-full" onClick={onStartBooking}>Detalhes</Button>
+                <p className="text-slate-500 text-sm">{service.description || "Tratamentos exclusivos para realçar sua beleza natural."}</p>
+                <Button variant="outline" className="w-full" onClick={() => onOpenServiceDetails(service)}>Detalhes</Button>
               </div>
             </Card>
           ))}
@@ -545,6 +553,67 @@ const HomeView = ({ onStartBooking, onViewAll }: { onStartBooking: () => void, o
         <div className="pt-8 border-t border-white/10 text-center text-[10px] text-slate-500">
           © 2024 Golden Clinic Beauty. Todos os direitos reservados.
         </div>
+      </footer>
+    </div>
+  );
+};
+
+const ServiceDetailsView = ({
+  service,
+  onBack,
+  onBook,
+}: {
+  service: Service;
+  onBack: () => void;
+  onBook: () => void;
+}) => {
+  return (
+    <div className="min-h-screen bg-background-light flex flex-col">
+      <header className="bg-white p-4 border-b border-primary/10 sticky top-0 z-10">
+        <div className="flex items-center justify-between">
+          <button onClick={onBack} className="text-primary"><ArrowLeft /></button>
+          <h2 className="text-xl font-bold">Detalhes do Serviço</h2>
+          <div className="w-6" />
+        </div>
+      </header>
+
+      <main className="flex-1 p-6 pb-32 space-y-6">
+        <Card className="overflow-hidden">
+          <div className="h-60 overflow-hidden">
+            <img src={service.image} alt={service.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          </div>
+          <div className="p-6 space-y-4">
+            <div>
+              <h1 className="text-3xl font-bold">{service.name}</h1>
+              <p className="text-xs text-slate-400 uppercase tracking-widest mt-1">{service.category}</p>
+            </div>
+            <p className="text-slate-600 leading-relaxed">
+              {service.description || "Serviço premium com atendimento especializado e foco na sua experiência."}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl bg-primary/5 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Duração</p>
+                <p className="font-bold">{service.duration} min</p>
+              </div>
+              <div className="rounded-xl bg-primary/5 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Valor</p>
+                <p className="font-bold text-primary">R$ {service.price.toFixed(2)}</p>
+              </div>
+            </div>
+            {service.professional_name && (
+              <div className="rounded-xl border border-primary/10 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Profissional Responsável</p>
+                <p className="font-bold">{service.professional_name}</p>
+              </div>
+            )}
+          </div>
+        </Card>
+      </main>
+
+      <footer className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 backdrop-blur-md border-t border-primary/10">
+        <Button className="w-full" onClick={onBook}>
+          <Calendar size={20} /> Agendar Este Serviço
+        </Button>
       </footer>
     </div>
   );
@@ -579,6 +648,16 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
     api.getBookings().then(setExistingBookings);
   }, []);
 
+  useEffect(() => {
+    if (!selectedServices.length || !professionals.length) return;
+    const preferredProfessionalId = selectedServices[0].professional_id;
+    if (!preferredProfessionalId) return;
+    const assignedProfessional = professionals.find(p => p.id === preferredProfessionalId);
+    if (assignedProfessional) {
+      setSelectedProfessional(assignedProfessional);
+    }
+  }, [selectedServices, professionals]);
+
   const handleNext = () => setStep(s => Math.min(s + 1, 5));
   const handleBack = () => {
     if (step === 1 || (step === 2 && currentUser)) {
@@ -589,11 +668,15 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
   };
 
   const toggleService = (service: Service) => {
-    setSelectedServices(prev => 
-      prev.find(s => s.id === service.id) 
-        ? prev.filter(s => s.id !== service.id)
-        : [...prev, service]
-    );
+    setSelectedServices(prev => {
+      const alreadySelected = prev.find(s => s.id === service.id);
+      const next = alreadySelected ? prev.filter(s => s.id !== service.id) : [...prev, service];
+      if (!alreadySelected && service.professional_id) {
+        const assignedProfessional = professionals.find(p => p.id === service.professional_id);
+        if (assignedProfessional) setSelectedProfessional(assignedProfessional);
+      }
+      return next;
+    });
   };
 
   const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
@@ -971,7 +1054,7 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
 
   const openCreateProfessionalModal = () => {
     setProfessionalModalMode('create');
-    setFormData({});
+    setFormData({ role: 'professional' });
     setShowModal('professional');
   };
 
@@ -990,6 +1073,7 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
           specialty: formData.specialty,
           email: formData.email,
           image: formData.image,
+          role: formData.role || 'professional',
           ...(formData.password?.trim() ? { password: formData.password } : {}),
         };
         await api.updateProfessional(formData.id, payload);
@@ -1001,6 +1085,7 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
           email: formData.email,
           password: formData.password,
           image: formData.image,
+          role: formData.role || 'professional',
         };
         await api.createProfessional(payload);
         alert("Profissional cadastrado com sucesso");
@@ -1262,6 +1347,9 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                   <div className="flex-1">
                     <h4 className="font-bold">{s.name}</h4>
                     <p className="text-xs text-slate-400">{s.category}</p>
+                    {s.professional_name && (
+                      <p className="text-[10px] text-slate-500 mt-1">Profissional: {s.professional_name}</p>
+                    )}
                     <p className="text-primary font-bold mt-1">R$ {s.price.toFixed(2)}</p>
                   </div>
                   <button 
@@ -1322,6 +1410,31 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                   className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary"
                   value={formData.duration || ''}
                   onChange={e => setFormData({ ...formData, duration: parseInt(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Profissional Responsável</label>
+                <select
+                  className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary bg-white"
+                  value={formData.professional_id || ''}
+                  onChange={e => setFormData({ ...formData, professional_id: e.target.value ? parseInt(e.target.value) : null })}
+                >
+                  <option value="">Selecione um profissional</option>
+                  {professionals
+                    .filter(p => p.role === 'professional' || p.role === 'admin')
+                    .map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Descritivo do Serviço</label>
+                <textarea
+                  rows={4}
+                  className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary resize-none"
+                  placeholder="Descreva o serviço, benefícios, cuidados e resultados esperados."
+                  value={formData.description || ''}
+                  onChange={e => setFormData({ ...formData, description: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
@@ -1398,6 +1511,17 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                   value={formData.password || ''}
                   onChange={e => setFormData({ ...formData, password: e.target.value })}
                 />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Nível de Acesso</label>
+                <select
+                  className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary bg-white"
+                  value={formData.role || 'professional'}
+                  onChange={e => setFormData({ ...formData, role: e.target.value })}
+                >
+                  <option value="professional">Profissional</option>
+                  <option value="admin">Administrador</option>
+                </select>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Foto do Profissional</label>
@@ -1484,19 +1608,26 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
 // --- Main App ---
 
 export default function App() {
-  const [view, setView] = useState<'home' | 'booking' | 'admin' | 'success' | 'admin-login'>('home');
+  const [view, setView] = useState<'home' | 'booking' | 'admin' | 'success' | 'admin-login' | 'service-detail'>('home');
   const [clientTab, setClientTab] = useState<'inicio' | 'servicos' | 'agenda' | 'perfil'>('inicio');
   const [currentUser, setCurrentUser] = useState<{ name: string, whatsapp: string, email?: string } | null>(null);
   const [adminUser, setAdminUser] = useState<Professional | null>(null);
   const [initialService, setInitialService] = useState<Service | null>(null);
+  const [selectedServiceDetails, setSelectedServiceDetails] = useState<Service | null>(null);
 
   const handleStartBooking = (service?: Service) => {
     if (!currentUser) {
       setClientTab('perfil');
+      setView('home');
       return;
     }
     setInitialService(service || null);
     setView('booking');
+  };
+
+  const handleOpenServiceDetails = (service: Service) => {
+    setSelectedServiceDetails(service);
+    setView('service-detail');
   };
 
   const isAdminArea = view === 'admin' || view === 'admin-login';
@@ -1512,7 +1643,13 @@ export default function App() {
       <AnimatePresence mode="wait">
         {view === 'home' && (
           <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            {clientTab === 'inicio' && <HomeView onStartBooking={() => handleStartBooking()} onViewAll={() => setClientTab('servicos')} />}
+            {clientTab === 'inicio' && (
+              <HomeView
+                onStartBooking={() => handleStartBooking()}
+                onViewAll={() => setClientTab('servicos')}
+                onOpenServiceDetails={handleOpenServiceDetails}
+              />
+            )}
             {clientTab === 'servicos' && <ServicesView onSelectService={(s) => handleStartBooking(s)} />}
             {clientTab === 'agenda' && (
               <AgendaView 
@@ -1546,6 +1683,15 @@ export default function App() {
               onCancel={() => setView('home')} 
               currentUser={currentUser}
               initialService={initialService}
+            />
+          </motion.div>
+        )}
+        {view === 'service-detail' && selectedServiceDetails && (
+          <motion.div key="service-detail" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <ServiceDetailsView
+              service={selectedServiceDetails}
+              onBack={() => setView('home')}
+              onBook={() => handleStartBooking(selectedServiceDetails)}
             />
           </motion.div>
         )}

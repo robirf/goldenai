@@ -6,6 +6,9 @@ export interface Service {
   duration: number;
   status: 'active' | 'inactive';
   image: string;
+  description?: string;
+  professional_id?: number | null;
+  professional_name?: string;
 }
 
 export interface Professional {
@@ -24,6 +27,7 @@ export interface ProfessionalCreatePayload {
   email: string;
   password: string;
   image?: string;
+  role?: 'admin' | 'professional';
 }
 
 export interface ProfessionalUpdatePayload {
@@ -32,6 +36,7 @@ export interface ProfessionalUpdatePayload {
   email: string;
   image?: string;
   password?: string;
+  role?: 'admin' | 'professional';
 }
 
 export interface AdminPasswordUpdatePayload {

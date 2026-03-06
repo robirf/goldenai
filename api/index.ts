@@ -135,16 +135,34 @@ app.post("/api/admin/login", handleAdminLogin);
 app.post("/api/admin-login", handleAdminLogin);
 
 app.get("/api/services", async (_req, res) => {
-  const { data, error } = await supabase.from("services").select("*").order("id", { ascending: true });
+  const { data, error } = await supabase
+    .from("services")
+    .select(`
+      id, name, category, price, duration, status, image, description, professional_id,
+      professionals(name)
+    `)
+    .order("id", { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  const mapped = (data || []).map((service: any) => ({
+    ...service,
+    professional_name: service.professionals?.name || null,
+  }));
+  res.json(mapped);
 });
 
 app.post("/api/services", async (req, res) => {
-  const { name, category, price, duration, image } = req.body;
+  const { name, category, price, duration, image, description, professional_id } = req.body;
   const { data, error } = await supabase
     .from("services")
-    .insert({ name, category, price, duration, image })
+    .insert({
+      name,
+      category,
+      price,
+      duration,
+      image,
+      description: description || null,
+      professional_id: professional_id || null,
+    })
     .select("id")
     .single();
 
@@ -162,10 +180,18 @@ const handleUpdateService = async (serviceIdRaw: unknown, req: express.Request, 
     return res.status(400).json({ error: "ID inválido" });
   }
 
-  const { name, category, price, duration, image } = req.body;
+  const { name, category, price, duration, image, description, professional_id } = req.body;
   const { error } = await supabase
     .from("services")
-    .update({ name, category, price, duration, image })
+    .update({
+      name,
+      category,
+      price,
+      duration,
+      image,
+      description: description || null,
+      professional_id: professional_id || null,
+    })
     .eq("id", serviceId);
 
   if (error) {
@@ -205,7 +231,7 @@ app.post("/api/professionals", async (req, res) => {
       specialty,
       email,
       password: hashPassword(password),
-      role: role || "professional",
+      role: role === "admin" ? "admin" : "professional",
       image: image || null,
     })
     .select("id")
@@ -227,7 +253,7 @@ const handleUpdateProfessional = async (professionalIdRaw: unknown, req: express
     return res.status(400).json({ error: "ID inválido" });
   }
 
-  const { name, specialty, email, image, password } = req.body;
+  const { name, specialty, email, image, password, role } = req.body;
   if (!name || !specialty || !email) {
     return res.status(400).json({ error: "Nome, especialidade e e-mail são obrigatórios" });
   }
@@ -235,7 +261,13 @@ const handleUpdateProfessional = async (professionalIdRaw: unknown, req: express
     return res.status(400).json({ error: "A senha deve ter no mínimo 8 caracteres" });
   }
 
-  const payload: Record<string, unknown> = { name, specialty, email, image: image || null };
+  const payload: Record<string, unknown> = {
+    name,
+    specialty,
+    email,
+    image: image || null,
+    role: role === "admin" ? "admin" : "professional",
+  };
   if (password && String(password).trim()) {
     payload.password = hashPassword(password);
   }
