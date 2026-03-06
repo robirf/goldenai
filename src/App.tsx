@@ -1131,7 +1131,7 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                 <Card className="p-6 space-y-4">
                   <div className="flex justify-between">
                     <div className="p-3 bg-primary/10 text-primary rounded-xl"><Calendar /></div>
-                    <span className="text-green-500 text-xs font-bold">+12%</span>
+                    <span className="text-slate-400 text-xs font-bold">0%</span>
                   </div>
                   <div>
                     <p className="text-slate-400 text-sm font-medium">Agendamentos Hoje</p>
@@ -1141,7 +1141,7 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                 <Card className="p-6 space-y-4">
                   <div className="flex justify-between">
                     <div className="p-3 bg-primary/10 text-primary rounded-xl"><Users /></div>
-                    <span className="text-green-500 text-xs font-bold">+8%</span>
+                    <span className="text-slate-400 text-xs font-bold">0%</span>
                   </div>
                   <div>
                     <p className="text-slate-400 text-sm font-medium">Novos Clientes</p>
@@ -1151,7 +1151,7 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                 <Card className="p-6 space-y-4">
                   <div className="flex justify-between">
                     <div className="p-3 bg-primary/10 text-primary rounded-xl"><Scissors /></div>
-                    <span className="text-green-500 text-xs font-bold">+15%</span>
+                    <span className="text-slate-400 text-xs font-bold">0%</span>
                   </div>
                   <div>
                     <p className="text-slate-400 text-sm font-medium">Receita Total</p>
