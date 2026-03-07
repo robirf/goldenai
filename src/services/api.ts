@@ -121,6 +121,14 @@ export const api = {
     });
     return parseResponse<{ id: number }>(res);
   },
+  deleteProfessional: async (id: number): Promise<{ success: boolean }> => {
+    const res = await fetch(`${API_BASE}/professionals-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    return parseResponse<{ success: boolean }>(res);
+  },
   updateProfessional: async (id: number, data: ProfessionalUpdatePayload): Promise<{ success: boolean }> => {
     const res = await fetch(`${API_BASE}/professionals-update`, {
       method: "POST",

@@ -366,6 +366,31 @@ const handleUpdateProfessional = async (professionalIdRaw: unknown, req: express
 app.put("/api/professionals/:id", async (req, res) => handleUpdateProfessional(req.params.id, req, res));
 app.post("/api/professionals-update", async (req, res) => handleUpdateProfessional(req.body?.id, req, res));
 
+const handleDeleteProfessional = async (professionalIdRaw: unknown, res: express.Response) => {
+  const professionalId = Number(professionalIdRaw);
+  if (!Number.isInteger(professionalId) || professionalId <= 0) {
+    return res.status(400).json({ error: "ID inválido" });
+  }
+
+  const { data: professional, error: findError } = await supabase
+    .from("professionals")
+    .select("id, role")
+    .eq("id", professionalId)
+    .maybeSingle();
+  if (findError) return res.status(500).json({ error: findError.message });
+  if (!professional) return res.status(404).json({ error: "Profissional não encontrado" });
+  if (professional.role === "admin") {
+    return res.status(400).json({ error: "Não é permitido excluir usuários administradores" });
+  }
+
+  const { error } = await supabase.from("professionals").delete().eq("id", professionalId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+};
+
+app.delete("/api/professionals/:id", async (req, res) => handleDeleteProfessional(req.params.id, res));
+app.post("/api/professionals-delete", async (req, res) => handleDeleteProfessional(req.body?.id, res));
+
 const handleUpdateAdminPassword = async (req: express.Request, res: express.Response) => {
   const { adminId, newPassword } = req.body;
   const parsedAdminId = Number(adminId);
@@ -515,6 +540,7 @@ app.post("/api/bookings-delete", async (req, res) => handleDeleteBooking(req.bod
 app.get("/api/stats", async (_req, res) => {
   const now = new Date();
   const today = now.toISOString().split("T")[0];
+  const monthStart = `${today.slice(0, 7)}-01`;
   const currentTime = now.toTimeString().substring(0, 5);
 
   const { count: appointmentsToday, error: appointmentsError } = await supabase
@@ -534,7 +560,9 @@ app.get("/api/stats", async (_req, res) => {
   const { data: confirmedBookings, error: confirmedError } = await supabase
     .from("bookings")
     .select("service_id, date, time")
-    .eq("status", "confirmed");
+    .eq("status", "confirmed")
+    .gte("date", monthStart)
+    .lte("date", today);
   if (confirmedError) return res.status(500).json({ error: confirmedError.message });
 
   const { data: services, error: servicesError } = await supabase.from("services").select("id, price");

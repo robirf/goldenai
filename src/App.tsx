@@ -1204,6 +1204,17 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
     }
   };
 
+  const handleDeleteProfessional = async (id: number) => {
+    if (!confirm("Deseja realmente excluir este profissional?")) return;
+    try {
+      await api.deleteProfessional(id);
+      alert("Profissional excluído com sucesso");
+      loadData();
+    } catch (error: any) {
+      alert(error?.message || "Erro ao excluir profissional");
+    }
+  };
+
   const handleSaveAdminPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (adminPasswordData.newPassword.length < 8) {
@@ -1321,9 +1332,8 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
             {isAdmin && stats && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card className="p-6 space-y-4">
-                  <div className="flex justify-between">
+                  <div className="flex justify-start">
                     <div className="p-3 bg-primary/10 text-primary rounded-xl"><Calendar /></div>
-                    <span className="text-slate-400 text-xs font-bold">0%</span>
                   </div>
                   <div>
                     <p className="text-slate-400 text-sm font-medium">Agendamentos Hoje</p>
@@ -1331,9 +1341,8 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                   </div>
                 </Card>
                 <Card className="p-6 space-y-4">
-                  <div className="flex justify-between">
+                  <div className="flex justify-start">
                     <div className="p-3 bg-primary/10 text-primary rounded-xl"><Users /></div>
-                    <span className="text-slate-400 text-xs font-bold">0%</span>
                   </div>
                   <div>
                     <p className="text-slate-400 text-sm font-medium">Novos Clientes</p>
@@ -1341,12 +1350,11 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                   </div>
                 </Card>
                 <Card className="p-6 space-y-4">
-                  <div className="flex justify-between">
+                  <div className="flex justify-start">
                     <div className="p-3 bg-primary/10 text-primary rounded-xl"><Scissors /></div>
-                    <span className="text-slate-400 text-xs font-bold">0%</span>
                   </div>
                   <div>
-                    <p className="text-slate-400 text-sm font-medium">Receita Total</p>
+                    <p className="text-slate-400 text-sm font-medium">Receita do Mês (Confirmados)</p>
                     <h3 className="text-3xl font-bold">R$ {stats.revenue.toFixed(2)}</h3>
                   </div>
                 </Card>
@@ -1433,6 +1441,15 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                   >
                     <Edit2 size={18} />
                   </button>
+                  {p.role !== 'admin' && (
+                    <button 
+                      onClick={() => handleDeleteProfessional(p.id)}
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                      title="Excluir profissional"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
                 </Card>
               ))}
             </div>
