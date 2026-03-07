@@ -54,8 +54,12 @@ create table if not exists public.app_settings (
   id integer primary key,
   open_time text not null default '09:00',
   close_time text not null default '19:00',
-  slot_minutes integer not null default 30
+  slot_minutes integer not null default 30,
+  working_days jsonb not null default '[1,2,3,4,5]'::jsonb
 );
+
+alter table public.app_settings
+  add column if not exists working_days jsonb not null default '[1,2,3,4,5]'::jsonb;
 
 alter table public.services add column if not exists description text;
 alter table public.services add column if not exists professional_id bigint;
@@ -121,6 +125,6 @@ insert into storage.buckets (id, name, public)
 values ('uploads', 'uploads', true)
 on conflict (id) do nothing;
 
-insert into public.app_settings (id, open_time, close_time, slot_minutes)
-values (1, '09:00', '19:00', 30)
+insert into public.app_settings (id, open_time, close_time, slot_minutes, working_days)
+values (1, '09:00', '19:00', 30, '[1,2,3,4,5]'::jsonb)
 on conflict (id) do nothing;

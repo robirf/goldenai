@@ -74,6 +74,7 @@ export interface BusinessHours {
   open_time: string;
   close_time: string;
   slot_minutes: number;
+  working_days: number[];
 }
 
 export interface Stats {

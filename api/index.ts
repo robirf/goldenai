@@ -28,7 +28,13 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 let storageBucketReady = false;
-const DEFAULT_BUSINESS_HOURS = { open_time: "09:00", close_time: "19:00", slot_minutes: 30 };
+const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5];
+const DEFAULT_BUSINESS_HOURS = {
+  open_time: "09:00",
+  close_time: "19:00",
+  slot_minutes: 30,
+  working_days: DEFAULT_WORKING_DAYS,
+};
 
 const isBcryptHash = (value: unknown): value is string => {
   return typeof value === "string" && /^\$2[aby]\$\d{2}\$/.test(value);
@@ -53,10 +59,28 @@ const mapDbError = (error: any, fallbackMessage: string) => {
   return { status: 500, message: error?.message || fallbackMessage };
 };
 
+const normalizeWorkingDays = (value: unknown): number[] => {
+  if (!Array.isArray(value)) return DEFAULT_WORKING_DAYS;
+  const uniqueDays = Array.from(
+    new Set(
+      value
+        .map((day) => Number(day))
+        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6),
+    ),
+  ).sort((a, b) => a - b);
+  return uniqueDays.length ? uniqueDays : DEFAULT_WORKING_DAYS;
+};
+
+const timeToMinutes = (time: string) => {
+  const [h, m] = String(time || "").split(":").map(Number);
+  if (!Number.isInteger(h) || !Number.isInteger(m)) return NaN;
+  return h * 60 + m;
+};
+
 const getBusinessHours = async () => {
   const { data, error } = await supabase
     .from("app_settings")
-    .select("open_time, close_time, slot_minutes")
+    .select("*")
     .eq("id", 1)
     .maybeSingle();
 
@@ -66,16 +90,22 @@ const getBusinessHours = async () => {
   }
 
   if (!data) {
-    const { data: inserted, error: insertError } = await supabase
-      .from("app_settings")
-      .insert({ id: 1, ...DEFAULT_BUSINESS_HOURS })
-      .select("open_time, close_time, slot_minutes")
-      .single();
-    if (insertError) throw insertError;
-    return inserted;
+    const { data: inserted, error: insertError } = await supabase.from("app_settings").insert({ id: 1, ...DEFAULT_BUSINESS_HOURS }).select("*").single();
+    if (insertError) {
+      if (insertError.code !== "PGRST204" && insertError.code !== "42703") throw insertError;
+
+      const { data: legacyInserted, error: legacyInsertError } = await supabase
+        .from("app_settings")
+        .insert({ id: 1, open_time: DEFAULT_BUSINESS_HOURS.open_time, close_time: DEFAULT_BUSINESS_HOURS.close_time, slot_minutes: DEFAULT_BUSINESS_HOURS.slot_minutes })
+        .select("*")
+        .single();
+      if (legacyInsertError) throw legacyInsertError;
+      return { ...legacyInserted, working_days: DEFAULT_WORKING_DAYS };
+    }
+    return { ...inserted, working_days: normalizeWorkingDays((inserted as any).working_days) };
   }
 
-  return data;
+  return { ...data, working_days: normalizeWorkingDays((data as any).working_days) };
 };
 
 const ensureStorageBucket = async () => {
@@ -341,16 +371,30 @@ app.get("/api/business-hours", async (_req, res) => {
 });
 
 app.post("/api/business-hours-update", async (req, res) => {
-  const { open_time, close_time, slot_minutes } = req.body;
+  const { open_time, close_time, slot_minutes, working_days } = req.body;
   if (!open_time || !close_time || !slot_minutes) {
     return res.status(400).json({ error: "open_time, close_time e slot_minutes são obrigatórios" });
+  }
+  const normalizedWorkingDays = normalizeWorkingDays(working_days);
+  if (!normalizedWorkingDays.length) {
+    return res.status(400).json({ error: "Selecione ao menos um dia de funcionamento" });
   }
 
   const { error } = await supabase
     .from("app_settings")
-    .upsert({ id: 1, open_time, close_time, slot_minutes: Number(slot_minutes) || 30 });
+    .upsert({ id: 1, open_time, close_time, slot_minutes: Number(slot_minutes) || 30, working_days: normalizedWorkingDays });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    if (error.code === "PGRST204" || error.code === "42703") {
+      const { error: legacyError } = await supabase
+        .from("app_settings")
+        .upsert({ id: 1, open_time, close_time, slot_minutes: Number(slot_minutes) || 30 });
+      if (legacyError) return res.status(500).json({ error: legacyError.message });
+      return res.json({ success: true });
+    }
+    return res.status(500).json({ error: error.message });
+  }
+
   res.json({ success: true });
 });
 
@@ -542,6 +586,39 @@ app.post("/api/bookings", async (req, res) => {
   const { client_name, whatsapp, service_id, professional_id, date, time } = req.body;
   if (!client_name || !whatsapp || !service_id || !professional_id || !date || !time) {
     return res.status(400).json({ error: "Dados obrigatórios ausentes" });
+  }
+
+  const businessHours = await getBusinessHours();
+  const appointmentDate = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(appointmentDate.getTime())) {
+    return res.status(400).json({ error: "Data inválida" });
+  }
+  const weekday = appointmentDate.getDay();
+  if (!businessHours.working_days.includes(weekday)) {
+    return res.status(400).json({ error: "A clínica não funciona no dia selecionado" });
+  }
+
+  const startMinutes = timeToMinutes(time);
+  const openMinutes = timeToMinutes(businessHours.open_time);
+  const closeMinutes = timeToMinutes(businessHours.close_time);
+  if ([startMinutes, openMinutes, closeMinutes].some((value) => Number.isNaN(value))) {
+    return res.status(400).json({ error: "Horário inválido" });
+  }
+  if (startMinutes < openMinutes || startMinutes >= closeMinutes) {
+    return res.status(400).json({ error: "Horário fora do funcionamento da clínica" });
+  }
+
+  const { data: selectedService, error: serviceError } = await supabase
+    .from("services")
+    .select("duration")
+    .eq("id", service_id)
+    .maybeSingle();
+  if (serviceError) return res.status(500).json({ error: serviceError.message });
+  if (!selectedService) return res.status(400).json({ error: "Serviço inválido" });
+
+  const endMinutes = startMinutes + (Number(selectedService.duration) || 0);
+  if (endMinutes > closeMinutes) {
+    return res.status(400).json({ error: "O serviço ultrapassa o horário de funcionamento da clínica" });
   }
 
   let clientId: number;

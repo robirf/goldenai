@@ -727,6 +727,12 @@ const ServiceDetailsView = ({
 };
 
 const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { onComplete: () => void; onCancel: () => void; currentUser?: { name: string, whatsapp: string } | null, initialService?: Service | null }) => {
+  const weekdayLabels = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+  const isWorkingDate = (dateStr: string) => {
+    const date = new Date(`${dateStr}T12:00:00`);
+    if (Number.isNaN(date.getTime())) return false;
+    return businessHours.working_days.includes(date.getDay());
+  };
   const formatLocalDate = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -746,7 +752,7 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
   const [step, setStep] = useState(currentUser ? 2 : 1);
   const [services, setServices] = useState<Service[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
-  const [businessHours, setBusinessHours] = useState<BusinessHours>({ open_time: "09:00", close_time: "19:00", slot_minutes: 30 });
+  const [businessHours, setBusinessHours] = useState<BusinessHours>({ open_time: "09:00", close_time: "19:00", slot_minutes: 30, working_days: [1, 2, 3, 4, 5] });
   
   const [selectedServices, setSelectedServices] = useState<Service[]>(initialService ? [initialService] : []);
   const [selectedProfessional, setSelectedProfessional] = useState<Professional | null>(null);
@@ -772,6 +778,24 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
     api.getBookings().then(setExistingBookings);
     api.getBusinessHours().then(setBusinessHours).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const selectedDateIsValid = isWorkingDate(selectedDate) && selectedDate >= formatLocalDate(new Date());
+    if (selectedDateIsValid) return;
+
+    const nextDate = new Date();
+    for (let i = 0; i < 60; i += 1) {
+      const candidate = new Date(nextDate);
+      candidate.setDate(nextDate.getDate() + i);
+      const candidateStr = formatLocalDate(candidate);
+      if (isWorkingDate(candidateStr)) {
+        setSelectedDate(candidateStr);
+        setCurrentMonth(new Date(candidate.getFullYear(), candidate.getMonth(), 1));
+        setSelectedTime("");
+        return;
+      }
+    }
+  }, [businessHours.working_days]);
 
   useEffect(() => {
     if (!selectedServices.length || !professionals.length) return;
@@ -831,9 +855,11 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
   };
 
   const getAvailableTimes = () => {
+    if (!isWorkingDate(selectedDate)) return [];
+
     const openMinutes = timeToMinutes(businessHours.open_time);
     const closeMinutes = timeToMinutes(businessHours.close_time);
-    const interval = Math.max(5, Number(businessHours.slot_minutes) || 30);
+    const interval = Math.max(5, totalDuration || Number(businessHours.slot_minutes) || 30);
     const latestStart = closeMinutes - Math.max(totalDuration, 0);
     const times: string[] = [];
 
@@ -998,7 +1024,7 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
                     </div>
                   </div>
                   <div className="grid grid-cols-7 text-center text-[10px] font-bold text-slate-400 mb-2">
-                    {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'].map(d => <div key={d}>{d}</div>)}
+                    {weekdayLabels.map(d => <div key={d}>{d}</div>)}
                   </div>
                   <div className="grid grid-cols-7 gap-1">
                     {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`} />)}
@@ -1008,16 +1034,21 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
                       const dateStr = formatLocalDate(dateObj);
                       const isSelected = selectedDate === dateStr;
                       const isPast = dateStr < formatLocalDate(new Date());
+                      const isDisabledDay = !isWorkingDate(dateStr);
+                      const isDisabled = isPast || isDisabledDay;
                       
                       return (
                         <button 
                           key={day}
-                          disabled={isPast}
-                          onClick={() => setSelectedDate(dateStr)}
+                          disabled={isDisabled}
+                          onClick={() => {
+                            setSelectedDate(dateStr);
+                            setSelectedTime('');
+                          }}
                           className={`h-10 rounded-lg text-sm font-bold transition-all ${
                             isSelected 
                               ? 'bg-primary text-white shadow-lg' 
-                              : isPast 
+                              : isDisabled
                                 ? 'text-slate-200 cursor-not-allowed' 
                                 : 'hover:bg-primary/10'
                           }`}
@@ -1031,6 +1062,9 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
 
                 <div className="space-y-4">
                   <h3 className="font-bold">Horários Disponíveis</h3>
+                  {!isWorkingDate(selectedDate) && (
+                    <p className="text-xs text-slate-500">A clínica não atende neste dia.</p>
+                  )}
                   <div className="grid grid-cols-3 gap-3">
                     {getAvailableTimes().map(time => {
                       const occupied = isTimeOccupied(time);
@@ -1123,6 +1157,15 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
 // --- Admin Views ---
 
 const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLogout: () => void }) => {
+  const weekdayOptions = [
+    { label: 'Domingo', value: 0 },
+    { label: 'Segunda', value: 1 },
+    { label: 'Terça', value: 2 },
+    { label: 'Quarta', value: 3 },
+    { label: 'Quinta', value: 4 },
+    { label: 'Sexta', value: 5 },
+    { label: 'Sábado', value: 6 },
+  ];
   const [stats, setStats] = useState<Stats | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [tab, setTab] = useState<'dashboard' | 'professionals' | 'services' | 'clients' | 'settings' | 'revenue'>('dashboard');
@@ -1130,7 +1173,7 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
   const [clients, setClients] = useState<Client[]>([]);
   const [professionalRevenue, setProfessionalRevenue] = useState<ProfessionalRevenue[]>([]);
   const [services, setServices] = useState<Service[]>([]);
-  const [businessHours, setBusinessHours] = useState<BusinessHours>({ open_time: "09:00", close_time: "19:00", slot_minutes: 30 });
+  const [businessHours, setBusinessHours] = useState<BusinessHours>({ open_time: "09:00", close_time: "19:00", slot_minutes: 30, working_days: [1, 2, 3, 4, 5] });
   const [showModal, setShowModal] = useState<'service' | 'professional' | 'admin-password' | null>(null);
   const [professionalModalMode, setProfessionalModalMode] = useState<'create' | 'edit'>('create');
   const [formData, setFormData] = useState<any>({});
@@ -1214,6 +1257,10 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
 
   const handleSaveBusinessHours = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!businessHours.working_days.length) {
+      alert("Selecione ao menos um dia de funcionamento");
+      return;
+    }
     try {
       await api.updateBusinessHours(businessHours);
       alert("Horário de funcionamento atualizado com sucesso");
@@ -1685,6 +1732,35 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                       value={businessHours.slot_minutes}
                       onChange={e => setBusinessHours({ ...businessHours, slot_minutes: parseInt(e.target.value) || 30 })}
                     />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Dias de funcionamento</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {weekdayOptions.map(day => {
+                      const selected = businessHours.working_days.includes(day.value);
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() =>
+                            setBusinessHours(prev => ({
+                              ...prev,
+                              working_days: selected
+                                ? prev.working_days.filter(d => d !== day.value)
+                                : [...prev.working_days, day.value].sort((a, b) => a - b),
+                            }))
+                          }
+                          className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
+                            selected
+                              ? 'bg-primary/10 text-primary border-primary/30'
+                              : 'bg-white text-slate-500 border-slate-200 hover:border-primary/20'
+                          }`}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <Button className="w-full sm:w-auto" type="submit">Salvar Horário</Button>
