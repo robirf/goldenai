@@ -27,7 +27,7 @@ import {
   KeyRound
 } from 'lucide-react';
 import { api } from './services/api';
-import { Service, Professional, Booking, Stats, ProfessionalCreatePayload, ProfessionalUpdatePayload } from './types';
+import { Service, Professional, Booking, Stats, Client, BusinessHours, ProfessionalCreatePayload, ProfessionalUpdatePayload } from './types';
 
 // --- Components ---
 
@@ -727,13 +727,30 @@ const ServiceDetailsView = ({
 };
 
 const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { onComplete: () => void; onCancel: () => void; currentUser?: { name: string, whatsapp: string } | null, initialService?: Service | null }) => {
+  const formatLocalDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const timeToMinutes = (time: string) => {
+    const [h, m] = time.split(':').map(Number);
+    return h * 60 + m;
+  };
+  const minutesToTime = (minutes: number) => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
   const [step, setStep] = useState(currentUser ? 2 : 1);
   const [services, setServices] = useState<Service[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
+  const [businessHours, setBusinessHours] = useState<BusinessHours>({ open_time: "09:00", close_time: "19:00", slot_minutes: 30 });
   
   const [selectedServices, setSelectedServices] = useState<Service[]>(initialService ? [initialService] : []);
   const [selectedProfessional, setSelectedProfessional] = useState<Professional | null>(null);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(formatLocalDate(new Date()));
   const [selectedTime, setSelectedTime] = useState("");
   const [userData, setUserData] = useState(currentUser || { name: "", whatsapp: "" });
   const [existingBookings, setExistingBookings] = useState<Booking[]>([]);
@@ -753,6 +770,7 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
       if (p.length > 0) setSelectedProfessional(p[0]);
     });
     api.getBookings().then(setExistingBookings);
+    api.getBusinessHours().then(setBusinessHours).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -787,12 +805,20 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
   };
 
   const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
+  const totalDuration = selectedServices.reduce((sum, s) => sum + s.duration, 0);
 
   const isTimeOccupied = (time: string) => {
+    const candidateStart = timeToMinutes(time);
+    const candidateEnd = candidateStart + totalDuration;
     return existingBookings.some(b => 
-      b.date === selectedDate && 
-      b.time === time && 
-      b.professional_id === selectedProfessional?.id
+      b.date === selectedDate &&
+      b.professional_id === selectedProfessional?.id &&
+      (() => {
+        const bookedStart = timeToMinutes(b.time);
+        const bookedDuration = b.service_duration || 30;
+        const bookedEnd = bookedStart + bookedDuration;
+        return candidateStart < bookedEnd && bookedStart < candidateEnd;
+      })()
     );
   };
 
@@ -802,6 +828,19 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
     const bookingDate = new Date(selectedDate);
     bookingDate.setHours(hours, minutes, 0, 0);
     return bookingDate < now;
+  };
+
+  const getAvailableTimes = () => {
+    const openMinutes = timeToMinutes(businessHours.open_time);
+    const closeMinutes = timeToMinutes(businessHours.close_time);
+    const interval = Math.max(5, Number(businessHours.slot_minutes) || 30);
+    const latestStart = closeMinutes - Math.max(totalDuration, 0);
+    const times: string[] = [];
+
+    for (let start = openMinutes; start <= latestStart; start += interval) {
+      times.push(minutesToTime(start));
+    }
+    return times;
   };
 
   const handleSubmit = async () => {
@@ -966,9 +1005,9 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
                     {Array.from({ length: days }).map((_, i) => {
                       const day = i + 1;
                       const dateObj = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-                      const dateStr = dateObj.toISOString().split('T')[0];
+                      const dateStr = formatLocalDate(dateObj);
                       const isSelected = selectedDate === dateStr;
-                      const isPast = dateObj < new Date(new Date().setHours(0,0,0,0));
+                      const isPast = dateStr < formatLocalDate(new Date());
                       
                       return (
                         <button 
@@ -993,7 +1032,7 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
                 <div className="space-y-4">
                   <h3 className="font-bold">Horários Disponíveis</h3>
                   <div className="grid grid-cols-3 gap-3">
-                    {['09:00', '10:30', '13:00', '14:30', '16:00', '19:00'].map(time => {
+                    {getAvailableTimes().map(time => {
                       const occupied = isTimeOccupied(time);
                       const past = isTimePast(time);
                       const disabled = occupied || past;
@@ -1086,9 +1125,11 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
 const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLogout: () => void }) => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [tab, setTab] = useState<'dashboard' | 'professionals' | 'services'>('dashboard');
+  const [tab, setTab] = useState<'dashboard' | 'professionals' | 'services' | 'clients' | 'settings'>('dashboard');
   const [professionals, setProfessionals] = useState<Professional[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [businessHours, setBusinessHours] = useState<BusinessHours>({ open_time: "09:00", close_time: "19:00", slot_minutes: 30 });
   const [showModal, setShowModal] = useState<'service' | 'professional' | 'admin-password' | null>(null);
   const [professionalModalMode, setProfessionalModalMode] = useState<'create' | 'edit'>('create');
   const [formData, setFormData] = useState<any>({});
@@ -1128,6 +1169,8 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
       api.getBookings().then(setBookings);
       api.getProfessionals().then(setProfessionals);
       api.getServices().then(setServices);
+      api.getClients().then(setClients);
+      api.getBusinessHours().then(setBusinessHours);
     } else {
       api.getBookings(undefined, adminUser.id).then(setBookings);
     }
@@ -1156,6 +1199,16 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
       loadData();
     } catch (error: any) {
       alert(error?.message || "Erro ao salvar serviço");
+    }
+  };
+
+  const handleSaveBusinessHours = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.updateBusinessHours(businessHours);
+      alert("Horário de funcionamento atualizado com sucesso");
+    } catch (error: any) {
+      alert(error?.message || "Erro ao atualizar horário de funcionamento");
     }
   };
 
@@ -1260,6 +1313,18 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
             >
               Serviços
             </button>
+            <button 
+              onClick={() => setTab('clients')}
+              className={`px-6 py-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap border-b-2 transition-all ${tab === 'clients' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}
+            >
+              Clientes
+            </button>
+            <button 
+              onClick={() => setTab('settings')}
+              className={`px-6 py-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap border-b-2 transition-all ${tab === 'settings' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}
+            >
+              Horários
+            </button>
           </>
         )}
       </div>
@@ -1290,6 +1355,18 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                 className={`flex items-center gap-3 p-3 rounded-xl font-bold transition-all ${tab === 'services' ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:bg-primary/5 hover:text-primary'}`}
               >
                 <Scissors size={20} /> Serviços
+              </button>
+              <button 
+                onClick={() => setTab('clients')}
+                className={`flex items-center gap-3 p-3 rounded-xl font-bold transition-all ${tab === 'clients' ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:bg-primary/5 hover:text-primary'}`}
+              >
+                <User size={20} /> Clientes
+              </button>
+              <button 
+                onClick={() => setTab('settings')}
+                className={`flex items-center gap-3 p-3 rounded-xl font-bold transition-all ${tab === 'settings' ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:bg-primary/5 hover:text-primary'}`}
+              >
+                <Clock size={20} /> Horários
               </button>
             </>
           )}
@@ -1485,6 +1562,80 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                 </Card>
               ))}
             </div>
+          </div>
+        )}
+
+        {tab === 'clients' && isAdmin && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-bold">Clientes Cadastrados</h3>
+              <span className="text-xs text-slate-400 font-bold uppercase">{clients.length} clientes</span>
+            </div>
+            <Card className="p-4">
+              <div className="space-y-3">
+                {clients.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-8">Nenhum cliente cadastrado.</p>
+                ) : (
+                  clients.map(client => (
+                    <div key={client.id} className="p-3 border border-primary/10 rounded-xl flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold">{client.name}</p>
+                        <p className="text-xs text-slate-500">{client.whatsapp}</p>
+                        {client.email && <p className="text-xs text-slate-400">{client.email}</p>}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cadastro</p>
+                        <p className="text-xs font-bold">
+                          {client.created_at ? new Date(client.created_at).toLocaleDateString('pt-BR') : '-'}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {tab === 'settings' && isAdmin && (
+          <div className="space-y-6">
+            <h3 className="text-xl font-bold">Horário de Funcionamento</h3>
+            <Card className="p-6">
+              <form onSubmit={handleSaveBusinessHours} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Abre às</label>
+                    <input
+                      type="time"
+                      className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary"
+                      value={businessHours.open_time}
+                      onChange={e => setBusinessHours({ ...businessHours, open_time: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Fecha às</label>
+                    <input
+                      type="time"
+                      className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary"
+                      value={businessHours.close_time}
+                      onChange={e => setBusinessHours({ ...businessHours, close_time: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Intervalo (min)</label>
+                    <input
+                      type="number"
+                      min={5}
+                      step={5}
+                      className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary"
+                      value={businessHours.slot_minutes}
+                      onChange={e => setBusinessHours({ ...businessHours, slot_minutes: parseInt(e.target.value) || 30 })}
+                    />
+                  </div>
+                </div>
+                <Button className="w-full sm:w-auto" type="submit">Salvar Horário</Button>
+              </form>
+            </Card>
           </div>
         )}
       </main>

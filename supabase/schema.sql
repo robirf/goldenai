@@ -50,6 +50,13 @@ create table if not exists public.bookings (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.app_settings (
+  id integer primary key,
+  open_time text not null default '09:00',
+  close_time text not null default '19:00',
+  slot_minutes integer not null default 30
+);
+
 alter table public.services add column if not exists description text;
 alter table public.services add column if not exists professional_id bigint;
 alter table public.clients add column if not exists password text;
@@ -112,4 +119,8 @@ on conflict (email) do nothing;
 
 insert into storage.buckets (id, name, public)
 values ('uploads', 'uploads', true)
+on conflict (id) do nothing;
+
+insert into public.app_settings (id, open_time, close_time, slot_minutes)
+values (1, '09:00', '19:00', 30)
 on conflict (id) do nothing;

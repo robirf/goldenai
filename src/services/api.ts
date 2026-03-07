@@ -4,6 +4,7 @@ import {
   Booking,
   Stats,
   Client,
+  BusinessHours,
   ProfessionalCreatePayload,
   ProfessionalUpdatePayload,
   AdminPasswordUpdatePayload,
@@ -27,6 +28,10 @@ export const api = {
   getProfessionals: async (): Promise<Professional[]> => {
     const res = await fetch(`${API_BASE}/professionals`);
     return parseResponse<Professional[]>(res);
+  },
+  getClients: async (): Promise<Client[]> => {
+    const res = await fetch(`${API_BASE}/clients`);
+    return parseResponse<Client[]>(res);
   },
   getBookings: async (whatsapp?: string, professional_id?: number): Promise<Booking[]> => {
     let url = `${API_BASE}/bookings`;
@@ -88,6 +93,18 @@ export const api = {
   getStats: async (): Promise<Stats> => {
     const res = await fetch(`${API_BASE}/stats`);
     return parseResponse<Stats>(res);
+  },
+  getBusinessHours: async (): Promise<BusinessHours> => {
+    const res = await fetch(`${API_BASE}/business-hours`);
+    return parseResponse<BusinessHours>(res);
+  },
+  updateBusinessHours: async (data: BusinessHours): Promise<{ success: boolean }> => {
+    const res = await fetch(`${API_BASE}/business-hours-update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return parseResponse<{ success: boolean }>(res);
   },
   adminLogin: async (data: any): Promise<Professional> => {
     const res = await fetch(`${API_BASE}/admin-login`, {

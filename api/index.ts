@@ -28,6 +28,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 let storageBucketReady = false;
+const DEFAULT_BUSINESS_HOURS = { open_time: "09:00", close_time: "19:00", slot_minutes: 30 };
 
 const isBcryptHash = (value: unknown): value is string => {
   return typeof value === "string" && /^\$2[aby]\$\d{2}\$/.test(value);
@@ -50,6 +51,31 @@ const mapDbError = (error: any, fallbackMessage: string) => {
     return { status: 409, message: "Já existe um registro com esse valor único" };
   }
   return { status: 500, message: error?.message || fallbackMessage };
+};
+
+const getBusinessHours = async () => {
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("open_time, close_time, slot_minutes")
+    .eq("id", 1)
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === "42P01") return DEFAULT_BUSINESS_HOURS;
+    throw error;
+  }
+
+  if (!data) {
+    const { data: inserted, error: insertError } = await supabase
+      .from("app_settings")
+      .insert({ id: 1, ...DEFAULT_BUSINESS_HOURS })
+      .select("open_time, close_time, slot_minutes")
+      .single();
+    if (insertError) throw insertError;
+    return inserted;
+  }
+
+  return data;
 };
 
 const ensureStorageBucket = async () => {
@@ -295,6 +321,39 @@ app.get("/api/professionals", async (_req, res) => {
   res.json(data);
 });
 
+app.get("/api/clients", async (_req, res) => {
+  const { data, error } = await supabase
+    .from("clients")
+    .select("id, name, email, whatsapp, status, image, notifications_enabled, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+app.get("/api/business-hours", async (_req, res) => {
+  try {
+    const settings = await getBusinessHours();
+    res.json(settings);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao carregar horário de funcionamento" });
+  }
+});
+
+app.post("/api/business-hours-update", async (req, res) => {
+  const { open_time, close_time, slot_minutes } = req.body;
+  if (!open_time || !close_time || !slot_minutes) {
+    return res.status(400).json({ error: "open_time, close_time e slot_minutes são obrigatórios" });
+  }
+
+  const { error } = await supabase
+    .from("app_settings")
+    .upsert({ id: 1, open_time, close_time, slot_minutes: Number(slot_minutes) || 30 });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
 app.post("/api/professionals", async (req, res) => {
   const { name, specialty, email, password, role, image } = req.body;
   if (!name || !specialty || !email || !password) {
@@ -445,7 +504,7 @@ app.get("/api/bookings", async (req, res) => {
     .from("bookings")
     .select(`
       id, client_id, service_id, professional_id, date, time, status, created_at,
-      services(name),
+      services(name, duration),
       professionals(name),
       clients(name, whatsapp)
     `)
@@ -470,6 +529,7 @@ app.get("/api/bookings", async (req, res) => {
     time: booking.time,
     status: booking.status,
     service_name: booking.services?.name,
+    service_duration: booking.services?.duration,
     professional_name: booking.professionals?.name,
     client_name: booking.clients?.name,
     whatsapp: booking.clients?.whatsapp,

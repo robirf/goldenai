@@ -52,6 +52,7 @@ export interface Client {
   status: 'active' | 'inactive';
   image?: string;
   notifications_enabled?: boolean;
+  created_at?: string;
 }
 
 export interface Booking {
@@ -63,9 +64,16 @@ export interface Booking {
   time: string;
   status: 'confirmed' | 'pending' | 'cancelled';
   service_name?: string;
+  service_duration?: number;
   professional_name?: string;
   client_name?: string;
   whatsapp?: string;
+}
+
+export interface BusinessHours {
+  open_time: string;
+  close_time: string;
+  slot_minutes: number;
 }
 
 export interface Stats {
