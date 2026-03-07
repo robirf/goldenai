@@ -81,3 +81,9 @@ export interface Stats {
   newClients: number;
   revenue: number;
 }
+
+export interface ProfessionalRevenue {
+  month: string;
+  revenue: number;
+  bookings_count: number;
+}

@@ -5,6 +5,7 @@ import {
   Stats,
   Client,
   BusinessHours,
+  ProfessionalRevenue,
   ProfessionalCreatePayload,
   ProfessionalUpdatePayload,
   AdminPasswordUpdatePayload,
@@ -93,6 +94,10 @@ export const api = {
   getStats: async (): Promise<Stats> => {
     const res = await fetch(`${API_BASE}/stats`);
     return parseResponse<Stats>(res);
+  },
+  getProfessionalRevenue: async (professionalId: number): Promise<ProfessionalRevenue[]> => {
+    const res = await fetch(`${API_BASE}/professional-revenue?professional_id=${professionalId}`);
+    return parseResponse<ProfessionalRevenue[]>(res);
   },
   getBusinessHours: async (): Promise<BusinessHours> => {
     const res = await fetch(`${API_BASE}/business-hours`);

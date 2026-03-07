@@ -27,7 +27,7 @@ import {
   KeyRound
 } from 'lucide-react';
 import { api } from './services/api';
-import { Service, Professional, Booking, Stats, Client, BusinessHours, ProfessionalCreatePayload, ProfessionalUpdatePayload } from './types';
+import { Service, Professional, Booking, Stats, Client, BusinessHours, ProfessionalRevenue, ProfessionalCreatePayload, ProfessionalUpdatePayload } from './types';
 
 // --- Components ---
 
@@ -1125,9 +1125,10 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
 const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLogout: () => void }) => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [tab, setTab] = useState<'dashboard' | 'professionals' | 'services' | 'clients' | 'settings'>('dashboard');
+  const [tab, setTab] = useState<'dashboard' | 'professionals' | 'services' | 'clients' | 'settings' | 'revenue'>('dashboard');
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [professionalRevenue, setProfessionalRevenue] = useState<ProfessionalRevenue[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [businessHours, setBusinessHours] = useState<BusinessHours>({ open_time: "09:00", close_time: "19:00", slot_minutes: 30 });
   const [showModal, setShowModal] = useState<'service' | 'professional' | 'admin-password' | null>(null);
@@ -1173,12 +1174,21 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
       api.getBusinessHours().then(setBusinessHours);
     } else {
       api.getBookings(undefined, adminUser.id).then(setBookings);
+      api.getProfessionalRevenue(adminUser.id).then(setProfessionalRevenue);
     }
   };
 
   useEffect(() => {
     loadData();
   }, [adminUser]);
+
+  const now = new Date();
+  const upcomingBookings = !isAdmin
+    ? bookings.filter(booking => {
+        const bookingDateTime = new Date(`${booking.date}T${booking.time}:00`);
+        return bookingDateTime >= now;
+      })
+    : bookings;
 
   const handleCancelBooking = async (id: number) => {
     if (confirm("Deseja realmente cancelar este agendamento?")) {
@@ -1327,6 +1337,14 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
             </button>
           </>
         )}
+        {!isAdmin && (
+          <button 
+            onClick={() => setTab('revenue')}
+            className={`px-6 py-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap border-b-2 transition-all ${tab === 'revenue' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}
+          >
+            Faturamento
+          </button>
+        )}
       </div>
 
       {/* Sidebar */}
@@ -1369,6 +1387,14 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                 <Clock size={20} /> Horários
               </button>
             </>
+          )}
+          {!isAdmin && (
+            <button 
+              onClick={() => setTab('revenue')}
+              className={`flex items-center gap-3 p-3 rounded-xl font-bold transition-all ${tab === 'revenue' ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:bg-primary/5 hover:text-primary'}`}
+            >
+              <Scissors size={20} /> Faturamento
+            </button>
           )}
         </nav>
       </aside>
@@ -1443,13 +1469,13 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
                 <h3 className="text-xl font-bold">Agendamentos {isAdmin ? 'Recentes' : 'Meus'}</h3>
               </div>
               <div className="space-y-4">
-                {bookings.length === 0 ? (
+                {(isAdmin ? bookings.length === 0 : upcomingBookings.length === 0) ? (
                   <div className="text-center py-12 text-slate-400">
                     <Calendar size={48} className="mx-auto mb-4 opacity-20" />
                     <p>Nenhum agendamento encontrado.</p>
                   </div>
                 ) : (
-                  bookings.map(booking => (
+                  upcomingBookings.map(booking => (
                     <div key={booking.id} className="p-4 bg-slate-50 rounded-xl border border-primary/5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between group hover:bg-primary/5 transition-all">
                       <div className="flex items-center gap-4">
                         <div className="p-2 bg-white rounded-lg border border-primary/10 text-center min-w-[70px] shadow-sm relative">
@@ -1492,6 +1518,34 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
               </div>
             </Card>
           </>
+        )}
+
+        {tab === 'revenue' && !isAdmin && (
+          <div className="space-y-6">
+            <h3 className="text-xl font-bold">Meu Faturamento por Mês</h3>
+            <Card className="p-4">
+              <div className="space-y-3">
+                {professionalRevenue.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-8">Nenhum faturamento registrado ainda.</p>
+                ) : (
+                  professionalRevenue.map(item => (
+                    <div key={item.month} className="p-3 border border-primary/10 rounded-xl flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold">
+                          {new Date(`${item.month}-01T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                        </p>
+                        <p className="text-xs text-slate-500">{item.bookings_count} serviço(s) confirmado(s)</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total</p>
+                        <p className="text-sm font-extrabold text-primary">R$ {item.revenue.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
         )}
 
         {tab === 'professionals' && isAdmin && (

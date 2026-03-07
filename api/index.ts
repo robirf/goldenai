@@ -583,6 +583,47 @@ app.post("/api/bookings", async (req, res) => {
   res.json({ id: booking.id });
 });
 
+app.get("/api/professional-revenue", async (req, res) => {
+  const professionalId = Number(req.query.professional_id);
+  if (!Number.isInteger(professionalId) || professionalId <= 0) {
+    return res.status(400).json({ error: "professional_id inválido" });
+  }
+
+  const { data: confirmedBookings, error: bookingsError } = await supabase
+    .from("bookings")
+    .select("date, service_id")
+    .eq("professional_id", professionalId)
+    .eq("status", "confirmed");
+
+  if (bookingsError) return res.status(500).json({ error: bookingsError.message });
+
+  const { data: services, error: servicesError } = await supabase.from("services").select("id, price");
+  if (servicesError) return res.status(500).json({ error: servicesError.message });
+
+  const servicePriceMap = new Map<number, number>((services || []).map((service: any) => [service.id, service.price]));
+  const aggregated = new Map<string, { revenue: number; bookings_count: number }>();
+
+  for (const booking of confirmedBookings || []) {
+    const month = String(booking.date || "").slice(0, 7);
+    if (!month || month.length !== 7) continue;
+    const servicePrice = servicePriceMap.get(booking.service_id) || 0;
+    const current = aggregated.get(month) || { revenue: 0, bookings_count: 0 };
+    current.revenue += servicePrice;
+    current.bookings_count += 1;
+    aggregated.set(month, current);
+  }
+
+  const result = Array.from(aggregated.entries())
+    .map(([month, values]) => ({
+      month,
+      revenue: Number(values.revenue.toFixed(2)),
+      bookings_count: values.bookings_count,
+    }))
+    .sort((a, b) => b.month.localeCompare(a.month));
+
+  res.json(result);
+});
+
 const handleDeleteBooking = async (bookingIdRaw: unknown, res: express.Response) => {
   const bookingId = Number(bookingIdRaw);
   if (!Number.isInteger(bookingId) || bookingId <= 0) {
