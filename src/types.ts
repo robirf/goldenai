@@ -50,6 +50,8 @@ export interface Client {
   email?: string;
   whatsapp: string;
   status: 'active' | 'inactive';
+  image?: string;
+  notifications_enabled?: boolean;
 }
 
 export interface Booking {

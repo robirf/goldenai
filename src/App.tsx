@@ -200,28 +200,96 @@ const AgendaView = ({ currentUser, onGoToLogin }: { currentUser: any, onGoToLogi
 };
 
 const ProfileView = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u: any) => void }) => {
-  const [subView, setSubView] = useState<'main' | 'data' | 'notifications'>('main');
-  const [loginData, setLoginData] = useState({ name: "", whatsapp: "" });
-  const [editData, setEditData] = useState({ name: user?.name || "", email: user?.email || "" });
-  const [notifPrefs, setNotifPrefs] = useState({ whatsapp: true, email: false, sms: false });
+  const [subView, setSubView] = useState<'main' | 'data' | 'notifications' | 'password'>('main');
+  const [loginData, setLoginData] = useState({ name: "", whatsapp: "", password: "" });
+  const [editData, setEditData] = useState({ name: user?.name || "", email: user?.email || "", image: user?.image || "" });
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(user?.notifications_enabled ?? true);
+  const [passwordData, setPasswordData] = useState({ newPassword: "", confirmPassword: "" });
+  const [loadingLogin, setLoadingLogin] = useState(false);
 
   useEffect(() => {
     if (user) {
-      setEditData({ name: user.name, email: user.email || "" });
+      setEditData({ name: user.name || "", email: user.email || "", image: user.image || "" });
+      setNotificationsEnabled(user.notifications_enabled ?? true);
     }
   }, [user]);
 
-  const handleLogin = () => {
-    if (loginData.name && loginData.whatsapp) {
-      onUpdateUser(loginData);
+  const handleLogin = async () => {
+    if (!loginData.whatsapp || !loginData.password) {
+      alert("Informe WhatsApp e senha.");
+      return;
+    }
+
+    try {
+      setLoadingLogin(true);
+      const loggedClient = await api.clientLogin(loginData);
+      onUpdateUser(loggedClient);
+    } catch (error: any) {
+      alert(error?.message || "Erro ao entrar no perfil.");
+    } finally {
+      setLoadingLogin(false);
     }
   };
 
   const handleUpdateData = async () => {
-    if (user && editData.name) {
-      await api.updateClient(user.whatsapp, editData);
+    if (!user || !editData.name) return;
+    try {
+      await api.updateClientProfile(user.whatsapp, editData);
       onUpdateUser({ ...user, ...editData });
       setSubView('main');
+      alert("Dados atualizados com sucesso.");
+    } catch (error: any) {
+      alert(error?.message || "Erro ao atualizar dados.");
+    }
+  };
+
+  const handleUploadProfileImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    try {
+      const { url } = await api.uploadFile(file);
+      await api.updateClientProfile(user.whatsapp, { name: user.name, email: user.email, image: url });
+      const updatedUser = { ...user, image: url };
+      setEditData(prev => ({ ...prev, image: url }));
+      onUpdateUser(updatedUser);
+      alert("Foto atualizada com sucesso.");
+    } catch (error: any) {
+      alert(error?.message || "Erro ao atualizar foto.");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const handleToggleNotifications = async () => {
+    if (!user) return;
+    const nextValue = !notificationsEnabled;
+    try {
+      await api.updateClientNotifications(user.whatsapp, nextValue);
+      setNotificationsEnabled(nextValue);
+      onUpdateUser({ ...user, notifications_enabled: nextValue });
+    } catch (error: any) {
+      alert(error?.message || "Erro ao atualizar notificações.");
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!user) return;
+    if (!passwordData.newPassword || passwordData.newPassword.length < 6) {
+      alert("A nova senha deve ter no mínimo 6 caracteres.");
+      return;
+    }
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      alert("A confirmação de senha não confere.");
+      return;
+    }
+
+    try {
+      await api.updateClientPassword(user.whatsapp, passwordData.newPassword);
+      setPasswordData({ newPassword: "", confirmPassword: "" });
+      setSubView('main');
+      alert("Senha alterada com sucesso.");
+    } catch (error: any) {
+      alert(error?.message || "Erro ao alterar senha.");
     }
   };
 
@@ -232,13 +300,13 @@ const ProfileView = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           <User size={40} />
         </div>
         <div className="text-center space-y-2">
-          <h2 className="text-3xl font-bold">Bem-vindo(a)!</h2>
-          <p className="text-slate-500">Faça login para gerenciar seus agendamentos e dados pessoais.</p>
+          <h2 className="text-3xl font-bold">Acesse seu Perfil</h2>
+          <p className="text-slate-500">Entre com WhatsApp e senha. Se for seu primeiro acesso, informe também seu nome.</p>
         </div>
         <div className="w-full space-y-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Nome Completo</label>
-            <input 
+            <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Nome (primeiro acesso)</label>
+            <input
               className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none"
               placeholder="Ex: João Silva"
               value={loginData.name}
@@ -247,14 +315,26 @@ const ProfileView = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-widest text-slate-400">WhatsApp</label>
-            <input 
+            <input
               className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none"
               placeholder="Ex: 21999999999"
               value={loginData.whatsapp}
               onChange={e => setLoginData({ ...loginData, whatsapp: e.target.value })}
             />
           </div>
-          <Button className="w-full" onClick={handleLogin}>Entrar no Perfil</Button>
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Senha</label>
+            <input
+              type="password"
+              className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none"
+              placeholder="Mínimo 6 caracteres"
+              value={loginData.password}
+              onChange={e => setLoginData({ ...loginData, password: e.target.value })}
+            />
+          </div>
+          <Button className="w-full" onClick={handleLogin} disabled={loadingLogin}>
+            {loadingLogin ? "Entrando..." : "Entrar no Perfil"}
+          </Button>
         </div>
       </div>
     );
@@ -267,20 +347,21 @@ const ProfileView = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           <motion.div key="main" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
             <div className="flex flex-col items-center gap-4">
               <div className="relative">
-                <div className="w-32 h-32 rounded-full border-4 border-primary/20 p-1">
-                  <img 
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuCutHo44Azg-xKJtsG536qDXFmB8lXpZQKfgvoWZ96kzshE2FS6EY6tWZgedqPpkrovpdJxA7-KOSb-d3gxV3TjhYmWO5jjF2Ujb5e1OJG4-bMOnOP8uuDU_vb4Z0R1yEFF3t7UgDsPIeLY0b-KYbfdW5Jep6b6E4wxX7zMyYBxi9-F6nfncM_thQ7ayBJoOK71ok8w6mwXiUe2CUuOz9MY2g0zFH4x9jWP5p0w1r7BQGksww0B1SpQ1DnPz9KvTz3Rw12byGp8ckp7" 
+                <div className="w-32 h-32 rounded-full border-4 border-primary/20 p-1 overflow-hidden">
+                  <img
+                    src={user.image || "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=300&q=80"}
                     className="w-full h-full rounded-full object-cover"
                   />
                 </div>
-                <button className="absolute bottom-0 right-0 p-2 bg-primary text-white rounded-full shadow-lg border-2 border-white">
+                <label className="absolute bottom-0 right-0 p-2 bg-primary text-white rounded-full shadow-lg border-2 border-white cursor-pointer">
                   <Edit2 size={14} />
-                </button>
+                  <input type="file" className="hidden" accept="image/*" onChange={handleUploadProfileImage} />
+                </label>
               </div>
               <div className="text-center">
                 <h3 className="text-2xl font-bold">{user.name}</h3>
                 <p className="text-primary text-sm font-bold uppercase tracking-widest flex items-center justify-center gap-1">
-                  <Star size={14} className="fill-primary" /> Cliente VIP
+                  <Star size={14} className="fill-primary" /> Cliente
                 </p>
               </div>
             </div>
@@ -291,15 +372,16 @@ const ProfileView = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
                 {[
                   { icon: <User size={20} />, label: "Meus Dados", id: 'data' },
                   { icon: <Bell size={20} />, label: "Notificações", id: 'notifications' },
-                  { icon: <Settings size={20} />, label: "Preferências", id: 'prefs' },
+                  { icon: <KeyRound size={20} />, label: "Alterar Senha", id: 'password' },
                   { icon: <LogOut size={20} />, label: "Sair", color: "text-red-500", id: 'logout' }
                 ].map((item, i) => (
-                  <button 
-                    key={i} 
+                  <button
+                    key={i}
                     onClick={() => {
                       if (item.id === 'logout') onLogout();
                       else if (item.id === 'data') setSubView('data');
                       else if (item.id === 'notifications') setSubView('notifications');
+                      else if (item.id === 'password') setSubView('password');
                     }}
                     className={`w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-all ${item.color || 'text-slate-700'}`}
                   >
@@ -326,7 +408,7 @@ const ProfileView = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Nome</label>
-                <input 
+                <input
                   className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none"
                   value={editData.name}
                   onChange={e => setEditData({ ...editData, name: e.target.value })}
@@ -334,7 +416,7 @@ const ProfileView = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-slate-400">E-mail</label>
-                <input 
+                <input
                   className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none"
                   placeholder="seu@email.com"
                   value={editData.email}
@@ -343,12 +425,11 @@ const ProfileView = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-slate-400">WhatsApp</label>
-                <input 
+                <input
                   className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-400 cursor-not-allowed"
                   value={user.whatsapp}
                   disabled
                 />
-                <p className="text-[10px] text-slate-400">O WhatsApp é usado como sua identificação e não pode ser alterado.</p>
               </div>
               <Button className="w-full mt-4" onClick={handleUpdateData}>Salvar Alterações</Button>
             </div>
@@ -363,29 +444,55 @@ const ProfileView = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
               </button>
               <h2 className="text-2xl font-bold">Notificações</h2>
             </div>
-            <p className="text-slate-500">Escolha por onde você deseja receber lembretes de agendamentos e novidades.</p>
-            <Card className="divide-y divide-slate-50">
-              {[
-                { id: 'whatsapp', label: 'WhatsApp', icon: <Phone size={18} /> },
-                { id: 'email', label: 'E-mail', icon: <Bell size={18} /> },
-                { id: 'sms', label: 'SMS', icon: <CheckCircle size={18} /> }
-              ].map(pref => (
-                <button 
-                  key={pref.id}
-                  onClick={() => setNotifPrefs({ ...notifPrefs, [pref.id]: !notifPrefs[pref.id as keyof typeof notifPrefs] })}
-                  className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-all"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-primary">{pref.icon}</span>
-                    <span className="font-bold">{pref.label}</span>
+            <Card className="p-4">
+              <button
+                onClick={handleToggleNotifications}
+                className="w-full flex items-center justify-between hover:bg-slate-50 transition-all p-2 rounded-lg"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-primary"><Bell size={20} /></span>
+                  <div className="text-left">
+                    <p className="font-bold">Receber notificações</p>
+                    <p className="text-xs text-slate-400">Ative ou desative lembretes e novidades.</p>
                   </div>
-                  <div className={`w-12 h-6 rounded-full transition-all relative ${notifPrefs[pref.id as keyof typeof notifPrefs] ? 'bg-primary' : 'bg-slate-200'}`}>
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notifPrefs[pref.id as keyof typeof notifPrefs] ? 'left-7' : 'left-1'}`} />
-                  </div>
-                </button>
-              ))}
+                </div>
+                <div className={`w-12 h-6 rounded-full transition-all relative ${notificationsEnabled ? 'bg-primary' : 'bg-slate-200'}`}>
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notificationsEnabled ? 'left-7' : 'left-1'}`} />
+                </div>
+              </button>
             </Card>
-            <Button className="w-full mt-4" onClick={() => setSubView('main')}>Salvar Preferências</Button>
+          </motion.div>
+        )}
+
+        {subView === 'password' && (
+          <motion.div key="password" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setSubView('main')} className="p-2 hover:bg-slate-100 rounded-full transition-all">
+                <ArrowLeft size={20} />
+              </button>
+              <h2 className="text-2xl font-bold">Alterar Senha</h2>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Nova senha</label>
+                <input
+                  type="password"
+                  className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none"
+                  value={passwordData.newPassword}
+                  onChange={e => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Confirmar nova senha</label>
+                <input
+                  type="password"
+                  className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none"
+                  value={passwordData.confirmPassword}
+                  onChange={e => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                />
+              </div>
+              <Button className="w-full" onClick={handleUpdatePassword}>Salvar Nova Senha</Button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -610,7 +717,7 @@ const ServiceDetailsView = ({
         </Card>
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 backdrop-blur-md border-t border-primary/10">
+      <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md p-6 bg-white/80 backdrop-blur-md border-t border-primary/10">
         <Button className="w-full" onClick={onBook}>
           <Calendar size={20} /> Agendar Este Serviço
         </Button>
@@ -960,7 +1067,7 @@ const BookingFlow = ({ onComplete, onCancel, currentUser, initialService }: { on
         </AnimatePresence>
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 backdrop-blur-md border-t border-primary/10 flex gap-4">
+      <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md p-6 bg-white/80 backdrop-blur-md border-t border-primary/10 flex gap-4">
         <Button variant="outline" className="flex-1" onClick={handleBack}>Anterior</Button>
         <Button 
           className="flex-[2]" 
@@ -1610,13 +1717,45 @@ const AdminDashboard = ({ adminUser, onLogout }: { adminUser: Professional, onLo
 export default function App() {
   const [view, setView] = useState<'home' | 'booking' | 'admin' | 'success' | 'admin-login' | 'service-detail'>('home');
   const [clientTab, setClientTab] = useState<'inicio' | 'servicos' | 'agenda' | 'perfil'>('inicio');
-  const [currentUser, setCurrentUser] = useState<{ name: string, whatsapp: string, email?: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ name: string, whatsapp: string, email?: string, image?: string, notifications_enabled?: boolean } | null>(null);
   const [adminUser, setAdminUser] = useState<Professional | null>(null);
   const [initialService, setInitialService] = useState<Service | null>(null);
   const [selectedServiceDetails, setSelectedServiceDetails] = useState<Service | null>(null);
+  const [pendingBooking, setPendingBooking] = useState(false);
+  const [pendingService, setPendingService] = useState<Service | null>(null);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem("golden_client_session");
+    if (storedUser) {
+      try {
+        setCurrentUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem("golden_client_session");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem("golden_client_session", JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem("golden_client_session");
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser && pendingBooking) {
+      setInitialService(pendingService || null);
+      setPendingBooking(false);
+      setPendingService(null);
+      setView('booking');
+    }
+  }, [currentUser, pendingBooking, pendingService]);
 
   const handleStartBooking = (service?: Service) => {
     if (!currentUser) {
+      setPendingBooking(true);
+      setPendingService(service || null);
       setClientTab('perfil');
       setView('home');
       return;
@@ -1637,7 +1776,7 @@ export default function App() {
       className={
         isAdminArea
           ? "w-full min-h-screen bg-background-light relative"
-          : "max-w-md mx-auto min-h-screen bg-background-light shadow-2xl relative"
+          : "w-full max-w-md mx-auto min-h-screen bg-background-light shadow-2xl relative md:my-4 md:min-h-[calc(100vh-2rem)] md:rounded-3xl md:overflow-hidden"
       }
     >
       <AnimatePresence mode="wait">
@@ -1670,7 +1809,7 @@ export default function App() {
             
             <button 
               onClick={() => setView('admin-login')}
-              className="fixed bottom-28 right-6 w-12 h-12 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-xl z-50"
+              className="fixed bottom-28 right-6 md:right-[calc(50%-12.5rem)] w-12 h-12 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-xl z-50"
             >
               <Settings size={20} />
             </button>
@@ -1733,7 +1872,7 @@ export default function App() {
 
       {/* Bottom Nav (Client Only) */}
       {['home', 'success'].includes(view) && (
-        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/80 backdrop-blur-md border-t border-primary/10 p-4 flex justify-around items-center z-40">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/80 backdrop-blur-md border-t border-primary/10 p-4 flex justify-around items-center z-40">
           <button 
             onClick={() => { setView('home'); setClientTab('inicio'); }}
             className={`flex flex-col items-center gap-1 ${clientTab === 'inicio' ? 'text-primary' : 'text-slate-400'}`}

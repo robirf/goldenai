@@ -40,6 +40,11 @@ const sanitizeProfessional = (professional: any) => {
   return professionalWithoutPassword;
 };
 
+const sanitizeClient = (client: any) => {
+  const { password, ...clientWithoutPassword } = client;
+  return clientWithoutPassword;
+};
+
 const mapDbError = (error: any, fallbackMessage: string) => {
   if (error?.code === "23505") {
     return { status: 409, message: "Já existe um registro com esse valor único" };
@@ -133,6 +138,81 @@ const handleAdminLogin = async (req: express.Request, res: express.Response) => 
 
 app.post("/api/admin/login", handleAdminLogin);
 app.post("/api/admin-login", handleAdminLogin);
+
+app.post("/api/client-login", async (req, res) => {
+  const { whatsapp, password, name } = req.body;
+  if (!whatsapp || !password) {
+    return res.status(400).json({ error: "WhatsApp e senha são obrigatórios" });
+  }
+  if (String(password).length < 6) {
+    return res.status(400).json({ error: "A senha deve ter no mínimo 6 caracteres" });
+  }
+
+  const { data: existingClient, error: findError } = await supabase
+    .from("clients")
+    .select("*")
+    .eq("whatsapp", whatsapp)
+    .maybeSingle();
+
+  if (findError) return res.status(500).json({ error: findError.message });
+
+  if (!existingClient) {
+    if (!name) {
+      return res.status(400).json({ error: "Informe seu nome para primeiro acesso" });
+    }
+    const { data: newClient, error: createError } = await supabase
+      .from("clients")
+      .insert({
+        name,
+        whatsapp,
+        password: hashPassword(password),
+        notifications_enabled: true,
+      })
+      .select("*")
+      .single();
+    if (createError) return res.status(500).json({ error: createError.message });
+    return res.json(sanitizeClient(newClient));
+  }
+
+  const storedPassword = existingClient.password as string | null;
+  if (!storedPassword) {
+    const { data: upgradedClient, error: upgradeError } = await supabase
+      .from("clients")
+      .update({
+        password: hashPassword(password),
+        name: name || existingClient.name,
+      })
+      .eq("id", existingClient.id)
+      .select("*")
+      .single();
+    if (upgradeError) return res.status(500).json({ error: upgradeError.message });
+    return res.json(sanitizeClient(upgradedClient));
+  }
+
+  if (isBcryptHash(storedPassword)) {
+    if (!bcrypt.compareSync(password, storedPassword)) {
+      return res.status(401).json({ error: "Credenciais inválidas" });
+    }
+  } else if (storedPassword === password) {
+    const upgradedHash = hashPassword(password);
+    await supabase.from("clients").update({ password: upgradedHash }).eq("id", existingClient.id);
+  } else {
+    return res.status(401).json({ error: "Credenciais inválidas" });
+  }
+
+  if (name && name !== existingClient.name) {
+    const { data: updatedClient, error: updateNameError } = await supabase
+      .from("clients")
+      .update({ name })
+      .eq("id", existingClient.id)
+      .select("*")
+      .single();
+    if (updateNameError) return res.status(500).json({ error: updateNameError.message });
+    return res.json(sanitizeClient(updatedClient));
+  }
+
+  res.json(sanitizeClient(existingClient));
+});
 
 app.get("/api/services", async (_req, res) => {
   const { data, error } = await supabase
@@ -391,7 +471,7 @@ app.post("/api/bookings", async (req, res) => {
   if (!existingClient) {
     const { data: newClient, error: createClientError } = await supabase
       .from("clients")
-      .insert({ name: client_name, whatsapp })
+      .insert({ name: client_name, whatsapp, notifications_enabled: true })
       .select("id")
       .single();
     if (createClientError) return res.status(500).json({ error: createClientError.message });
@@ -477,14 +557,14 @@ app.get("/api/stats", async (_req, res) => {
 
 const handleUpdateClient = async (whatsappRaw: unknown, req: express.Request, res: express.Response) => {
   const whatsapp = String(whatsappRaw || "");
-  const { name, email } = req.body;
+  const { name, email, image } = req.body;
   if (!whatsapp || !name) {
     return res.status(400).json({ error: "WhatsApp e nome são obrigatórios" });
   }
 
   const { error } = await supabase
     .from("clients")
-    .update({ name, email: email || null })
+    .update({ name, email: email || null, image: image || null })
     .eq("whatsapp", whatsapp);
 
   if (error) {
@@ -497,6 +577,38 @@ const handleUpdateClient = async (whatsappRaw: unknown, req: express.Request, re
 
 app.put("/api/clients/:whatsapp", async (req, res) => handleUpdateClient(req.params.whatsapp, req, res));
 app.post("/api/clients-update", async (req, res) => handleUpdateClient(req.body?.whatsapp, req, res));
+app.post("/api/client-profile-update", async (req, res) => handleUpdateClient(req.body?.whatsapp, req, res));
+
+app.post("/api/client-notifications-update", async (req, res) => {
+  const { whatsapp, notifications_enabled } = req.body;
+  if (!whatsapp) return res.status(400).json({ error: "WhatsApp é obrigatório" });
+
+  const { error } = await supabase
+    .from("clients")
+    .update({ notifications_enabled: !!notifications_enabled })
+    .eq("whatsapp", whatsapp);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+app.post("/api/client-password-update", async (req, res) => {
+  const { whatsapp, newPassword } = req.body;
+  if (!whatsapp || !newPassword) {
+    return res.status(400).json({ error: "WhatsApp e nova senha são obrigatórios" });
+  }
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ error: "A senha deve ter no mínimo 6 caracteres" });
+  }
+
+  const { error } = await supabase
+    .from("clients")
+    .update({ password: hashPassword(newPassword) })
+    .eq("whatsapp", whatsapp);
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({ success: true });
+});
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });

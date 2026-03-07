@@ -32,6 +32,9 @@ create table if not exists public.clients (
   name text not null,
   email text unique,
   whatsapp text not null unique,
+  password text,
+  image text,
+  notifications_enabled boolean not null default true,
   status text not null default 'active' check (status in ('active', 'inactive')),
   created_at timestamptz not null default now()
 );
@@ -49,6 +52,9 @@ create table if not exists public.bookings (
 
 alter table public.services add column if not exists description text;
 alter table public.services add column if not exists professional_id bigint;
+alter table public.clients add column if not exists password text;
+alter table public.clients add column if not exists image text;
+alter table public.clients add column if not exists notifications_enabled boolean not null default true;
 do $$
 begin
   if not exists (

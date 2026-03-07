@@ -3,6 +3,7 @@ import {
   Professional,
   Booking,
   Stats,
+  Client,
   ProfessionalCreatePayload,
   ProfessionalUpdatePayload,
   AdminPasswordUpdatePayload,
@@ -52,11 +53,35 @@ export const api = {
     });
     return parseResponse<{ success: boolean }>(res);
   },
-  updateClient: async (whatsapp: string, data: { name: string; email?: string }): Promise<{ success: boolean }> => {
-    const res = await fetch(`${API_BASE}/clients-update`, {
+  clientLogin: async (data: { whatsapp: string; password: string; name?: string }): Promise<Client> => {
+    const res = await fetch(`${API_BASE}/client-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return parseResponse<Client>(res);
+  },
+  updateClientProfile: async (whatsapp: string, data: { name: string; email?: string; image?: string }): Promise<{ success: boolean }> => {
+    const res = await fetch(`${API_BASE}/client-profile-update`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ whatsapp, ...data }),
+    });
+    return parseResponse<{ success: boolean }>(res);
+  },
+  updateClientNotifications: async (whatsapp: string, notifications_enabled: boolean): Promise<{ success: boolean }> => {
+    const res = await fetch(`${API_BASE}/client-notifications-update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ whatsapp, notifications_enabled }),
+    });
+    return parseResponse<{ success: boolean }>(res);
+  },
+  updateClientPassword: async (whatsapp: string, newPassword: string): Promise<{ success: boolean }> => {
+    const res = await fetch(`${API_BASE}/client-password-update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ whatsapp, newPassword }),
     });
     return parseResponse<{ success: boolean }>(res);
   },
